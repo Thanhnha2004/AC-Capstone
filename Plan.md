@@ -52,7 +52,7 @@ Deliverable Ngày 1:
 
 ### Morning (2-3 giờ)
 1. SavingBank Setup
-- Import ERC721, OpenZeppelin contracts
+- Import ERC721, OpenZeppelin, Pausable, ReentrancyGuard contracts
 - Define errors
 - Define structs:
   - SavingPlan
