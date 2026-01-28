@@ -36,36 +36,43 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
     error NotActiveDeposit();
     error NotMaturedYet();
     error AlreadyMatured();
+    error AlreadyRenewed();
+
+    /*//////////////////////////////////////////////////////////////
+    /////////////////////         ENUMS       //////////////////////
+    //////////////////////////////////////////////////////////////*/
+    enum DepositStatus {
+        Active, // 0: Đang hoạt động
+        Withdrawn, // 1: Đã rút đúng hạn
+        EarlyWithdrawn, // 2: Đã rút sớm
+        Renewed // 3: Đã gia hạn
+    }
 
     /*//////////////////////////////////////////////////////////////
     ////////////////////         STRUCTS       /////////////////////
     //////////////////////////////////////////////////////////////*/
     struct SavingPlan {
-        uint256 tenorDays; // kỳ hạn (7/30/90/180…)
-        uint256 aprBps; // lãi suất năm (800 = 8%)
-        uint256 minDeposit; // số tiền gửi tối thiểu
-        uint256 maxDeposit; // số tiền gửi tối đa
-        uint256 earlyWithdrawPenaltyBps; // phạt rút trước hạn (500 = 5%)
-        bool enabled; // bật/tắt saving plan
+        uint256 tenorDays;
+        uint256 aprBps;
+        uint256 minDeposit;
+        uint256 maxDeposit;
+        uint256 earlyWithdrawPenaltyBps;
+        bool enabled;
     }
 
     struct DepositCertificate {
-        address owner; // người sở hữu
-        uint256 planId; // id saving plan
-        uint256 principal; // số tiền gốc
-        uint256 startAt; // thời điểm bắt đầu
-        uint256 maturityAt; // thời điểm đến hạn
-        bool status; // trạng thái (true/false)
-        uint256 renew; // deposit mới khi đáo hạn
+        address owner;
+        uint256 planId;
+        uint256 principal;
+        uint256 startAt;
+        uint256 maturityAt;
+        DepositStatus status; // Changed: bool -> enum
+        uint256 renewedDepositId;
         // SNAPSHOT PLAN DATA
-        uint256 snapshotAprBps; // lãi suất được lock
-        uint256 snapshotTenorDays; // kỳ hạn được lock
-        uint256 snapshotEarlyWithdrawPenaltyBps; // phạt rút sớm được lock
+        uint256 snapshotAprBps;
+        uint256 snapshotTenorDays;
+        uint256 snapshotEarlyWithdrawPenaltyBps;
     }
-
-    /*//////////////////////////////////////////////////////////////
-    /////////////////////         ENUMS       //////////////////////
-    //////////////////////////////////////////////////////////////*/
 
     /*//////////////////////////////////////////////////////////////
     ///////////////////         CONSTANTS       ////////////////////
@@ -78,15 +85,15 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
     IERC20 public immutable token;
 
-    uint256 public planId;
-    uint256 public depositId;
+    uint256 public nextPlanId;
+    uint256 public nextDepositId;
 
     mapping(uint256 => SavingPlan) public savingPlans;
     mapping(uint256 => DepositCertificate) public depositCertificates;
     mapping(address => uint256[]) public userDepositIds;
 
-    ILiquidityVault public vault; // địa chỉ LiquidityVault contract
-    address public feeReceiver; // địa chỉ người nhận phí phạt khi rút sớm
+    ILiquidityVault public vault;
+    address public feeReceiver;
 
     /*//////////////////////////////////////////////////////////////
     //////////////////         CONSTRUCTOR       ///////////////////
@@ -104,15 +111,15 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
         vault = ILiquidityVault(_vault);
         feeReceiver = _feeReceiver;
 
-        planId = 1;
-        depositId = 1;
+        nextPlanId = 1;
+        nextDepositId = 1;
     }
 
     /*//////////////////////////////////////////////////////////////
     ////////////////////         EVENTS       //////////////////////
     //////////////////////////////////////////////////////////////*/
     event PlanCreated(
-        uint256 planId,
+        uint256 indexed planId,
         uint256 tenorDays,
         uint256 aprBps,
         uint256 minDeposit,
@@ -120,28 +127,34 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
         uint256 earlyWithdrawPenaltyBps
     );
     event FeeReceiverUpdated(address indexed newFeeReceiver);
-    event PlanUpdated(uint256 planId, bool status);
+    event PlanUpdated(uint256 indexed planId, bool isEnabled);
     event VaultUpdated(address indexed newVault);
     event DepositCertificateOpened(
-        uint256 depositId,
+        uint256 indexed depositId,
         address indexed user,
-        uint256 planId,
-        uint256 amount,
-        uint256 maturity
+        uint256 indexed planId,
+        uint256 depositAmount,
+        uint256 maturityTimestamp
     );
     event Withdrawn(
-        uint256 depositId,
+        uint256 indexed depositId,
         address indexed user,
-        uint256 principal,
-        uint256 interest,
-        bool status
+        uint256 principalAmount,
+        uint256 interestAmount,
+        DepositStatus finalStatus
     );
     event EarlyWithdrawn(
-        uint256 depositId,
+        uint256 indexed depositId,
         address indexed user,
-        uint256 principal,
-        uint256 penalty,
-        bool status
+        uint256 amountReceived,
+        uint256 penaltyAmount,
+        DepositStatus finalStatus
+    );
+    event Renewed(
+        uint256 indexed oldDepositId,
+        uint256 indexed newDepositId,
+        address indexed user,
+        uint256 newPrincipal
     );
 
     /*//////////////////////////////////////////////////////////////
@@ -153,96 +166,108 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice mở số tiết kiệm
+     * @notice Mở sổ tiết kiệm
      */
     function openDepositCertificate(
-        uint256 id,
-        uint256 amount
+        uint256 planId,
+        uint256 depositAmount
     ) external whenNotPaused nonReentrant {
-        SavingPlan memory plan = savingPlans[id];
+        SavingPlan memory plan = savingPlans[planId];
 
         if (!plan.enabled) revert NotEnabledPlan();
-        if (amount < plan.minDeposit) revert InvalidAmount();
-        if (plan.maxDeposit > 0 && amount > plan.maxDeposit)
+        if (depositAmount < plan.minDeposit) revert InvalidAmount();
+        if (plan.maxDeposit > 0 && depositAmount > plan.maxDeposit)
             revert InvalidAmount();
 
-        address user = msg.sender;
-        uint256 currentId = depositId;
-        uint256 maturity = block.timestamp + (plan.tenorDays * 1 days);
+        address depositor = msg.sender;
+        uint256 newDepositId = nextDepositId;
+        uint256 maturityTimestamp = block.timestamp + (plan.tenorDays * 1 days);
 
-        depositCertificates[currentId] = DepositCertificate({
-            owner: user,
-            planId: id,
-            principal: amount,
+        depositCertificates[newDepositId] = DepositCertificate({
+            owner: depositor,
+            planId: planId,
+            principal: depositAmount,
             startAt: block.timestamp,
-            maturityAt: maturity,
-            status: true,
-            renew: 0,
+            maturityAt: maturityTimestamp,
+            status: DepositStatus.Active,
+            renewedDepositId: 0,
             snapshotAprBps: plan.aprBps,
             snapshotTenorDays: plan.tenorDays,
             snapshotEarlyWithdrawPenaltyBps: plan.earlyWithdrawPenaltyBps
         });
 
-        userDepositIds[user].push(currentId);
-        depositId++;
+        userDepositIds[depositor].push(newDepositId);
+        nextDepositId++;
 
-        token.safeTransferFrom(user, address(this), amount);
+        token.safeTransferFrom(depositor, address(this), depositAmount);
+        _safeMint(depositor, newDepositId);
 
-        _safeMint(user, currentId);
-
-        emit DepositCertificateOpened(currentId, user, id, amount, maturity);
+        emit DepositCertificateOpened(
+            newDepositId,
+            depositor,
+            planId,
+            depositAmount,
+            maturityTimestamp
+        );
     }
 
     /**
-     * @notice rút đúng hạn (gốc + lãi)
+     * @notice Rút đúng hạn (gốc + lãi)
      */
-    function withdraw(uint256 id) external nonReentrant {
-        DepositCertificate storage deposit = depositCertificates[id];
-        address user = msg.sender;
+    function withdraw(uint256 depositId) external nonReentrant {
+        DepositCertificate storage deposit = depositCertificates[depositId];
+        address depositor = msg.sender;
 
-        if (user != deposit.owner) revert NotOwner();
-        if (!deposit.status) revert NotActiveDeposit();
+        if (depositor != deposit.owner) revert NotOwner();
+        if (deposit.status != DepositStatus.Active) revert NotActiveDeposit();
         if (block.timestamp < deposit.maturityAt) revert NotMaturedYet();
 
-        uint256 interest = _calculateInterest(id);
+        uint256 interestAmount = _calculateInterest(depositId);
 
-        deposit.status = false;
+        deposit.status = DepositStatus.Withdrawn;
 
-        token.safeTransfer(user, deposit.principal);
+        token.safeTransfer(depositor, deposit.principal);
+        vault.payInterest(depositor, interestAmount);
 
-        vault.payInterest(user, interest);
+        _burn(depositId);
 
-        _burn(id);
-
-        emit Withdrawn(id, user, deposit.principal, interest, deposit.status);
+        emit Withdrawn(
+            depositId,
+            depositor,
+            deposit.principal,
+            interestAmount,
+            deposit.status
+        );
     }
 
     /**
-     * @notice rút trước hạn (gốc - phạt)
+     * @notice Rút trước hạn (gốc - phạt)
      */
-    function earlyWithdraw(uint256 id) external nonReentrant {
-        DepositCertificate storage deposit = depositCertificates[id];
+    function earlyWithdraw(uint256 depositId) external nonReentrant {
+        DepositCertificate storage deposit = depositCertificates[depositId];
+        address depositor = msg.sender;
 
-        if (msg.sender != deposit.owner) revert NotOwner();
-        if (!deposit.status) revert NotActiveDeposit();
+        if (depositor != deposit.owner) revert NotOwner();
+        if (deposit.status != DepositStatus.Active) revert NotActiveDeposit();
         if (block.timestamp >= deposit.maturityAt) revert AlreadyMatured();
 
-        uint256 penalty = (deposit.principal *
+        uint256 penaltyAmount = (deposit.principal *
             deposit.snapshotEarlyWithdrawPenaltyBps) / BASIS_POINTS;
+        uint256 amountAfterPenalty = deposit.principal - penaltyAmount;
 
-        deposit.status = false;
+        deposit.status = DepositStatus.EarlyWithdrawn;
 
-        token.safeTransfer(msg.sender, deposit.principal - penalty);
-        token.safeTransfer(feeReceiver, penalty);
+        token.safeTransfer(depositor, amountAfterPenalty);
+        token.safeTransfer(feeReceiver, penaltyAmount);
 
-        _burn(id);
+        _burn(depositId);
 
         emit EarlyWithdrawn(
-            id,
-            msg.sender,
-            deposit.principal - penalty,
-            penalty,
-            false
+            depositId,
+            depositor,
+            amountAfterPenalty,
+            penaltyAmount,
+            deposit.status
         );
     }
 
@@ -250,20 +275,12 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
     //////////////         ADMIN FUNCTIONS       ///////////////////
     //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @notice set địa chỉ cho LiquidityVault contract
-     */
     function setVault(address newVault) external onlyOwner {
         if (newVault == address(0)) revert InvalidVault();
-
         vault = ILiquidityVault(newVault);
-
         emit VaultUpdated(newVault);
     }
 
-    /**
-     * @notice tạo gói tiết kiệm mới
-     */
     function createPlan(
         uint256 tenorDays,
         uint256 aprBps,
@@ -281,9 +298,9 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
             earlyWithdrawPenaltyBps > BASIS_POINTS
         ) revert NotExceed();
 
-        uint256 id = planId;
+        uint256 newPlanId = nextPlanId;
 
-        savingPlans[id] = SavingPlan({
+        savingPlans[newPlanId] = SavingPlan({
             tenorDays: tenorDays,
             aprBps: aprBps,
             minDeposit: minDeposit,
@@ -292,10 +309,10 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
             enabled: true
         });
 
-        planId++;
+        nextPlanId++;
 
         emit PlanCreated(
-            id,
+            newPlanId,
             tenorDays,
             aprBps,
             minDeposit,
@@ -304,29 +321,24 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
         );
     }
 
-    /**
-     * @notice Cập nhật trạng thái enabled của plan
-     */
-    function updatePlanStatus(uint256 id, bool enabled) external onlyOwner {
-        if (id <= 0 || id >= planId) revert InvalidPlanId();
-
-        savingPlans[id].enabled = enabled;
-
-        emit PlanUpdated(id, enabled);
+    function updatePlanStatus(
+        uint256 planId,
+        bool isEnabled
+    ) external onlyOwner {
+        if (planId <= 0 || planId >= nextPlanId) revert InvalidPlanId();
+        savingPlans[planId].enabled = isEnabled;
+        emit PlanUpdated(planId, isEnabled);
     }
 
-    /**
-     * @notice Cập nhật plan
-     */
     function updatePlan(
-        uint256 id,
+        uint256 planId,
         uint256 tenorDays,
         uint256 aprBps,
         uint256 minDeposit,
         uint256 maxDeposit,
         uint256 earlyWithdrawPenaltyBps
     ) external onlyOwner {
-        if (id <= 0 || id >= planId) revert InvalidPlanId();
+        if (planId <= 0 || planId >= nextPlanId) revert InvalidPlanId();
         if (tenorDays == 0) revert InvalidTenor();
         if (aprBps == 0) revert InvalidAPR();
         if (minDeposit == 0) revert InvalidMinDeposit();
@@ -337,30 +349,22 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
             earlyWithdrawPenaltyBps > BASIS_POINTS
         ) revert NotExceed();
 
-        SavingPlan storage plan = savingPlans[id];
+        SavingPlan storage plan = savingPlans[planId];
         plan.tenorDays = tenorDays;
         plan.aprBps = aprBps;
         plan.minDeposit = minDeposit;
         plan.maxDeposit = maxDeposit;
         plan.earlyWithdrawPenaltyBps = earlyWithdrawPenaltyBps;
 
-        emit PlanUpdated(id, plan.enabled);
+        emit PlanUpdated(planId, plan.enabled);
     }
 
-    /**
-     * @notice cập nhật địa chỉ FeeReceiver
-     */
     function setFeeReceiver(address newFeeReceiver) external onlyOwner {
         if (newFeeReceiver == address(0)) revert InvalidAddress();
-
         feeReceiver = newFeeReceiver;
-
         emit FeeReceiverUpdated(newFeeReceiver);
     }
 
-    /**
-     * @notice Pause/unpause contract
-     */
     function pause() external onlyOwner {
         _pause();
     }
@@ -373,11 +377,8 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
     ///////////////         VIEW FUNCTIONS       ///////////////////
     //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @notice Lấy thông tin plan
-     */
     function getPlanInfo(
-        uint256 id
+        uint256 planId
     )
         external
         view
@@ -390,7 +391,7 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
             bool enabled
         )
     {
-        SavingPlan memory plan = savingPlans[id];
+        SavingPlan memory plan = savingPlans[planId];
         return (
             plan.tenorDays,
             plan.aprBps,
@@ -401,38 +402,60 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
         );
     }
 
-    /**
-     * @notice lấy id deposit của user
-     */
     function getUserDepositIds(
         address user
     ) external view returns (uint256[] memory) {
         return userDepositIds[user];
     }
 
-    /**
-     * @notice lấy lãi suất của 1 deposit
-     */
-    function getCalculateInterest(uint256 id) external view returns (uint256) {
-        return _calculateInterest(id);
+    function getCalculateInterest(
+        uint256 depositId
+    ) external view returns (uint256) {
+        return _calculateInterest(depositId);
+    }
+
+    function getDepositInfo(
+        uint256 depositId
+    )
+        external
+        view
+        returns (
+            address owner,
+            uint256 planId,
+            uint256 principal,
+            uint256 startAt,
+            uint256 maturityAt,
+            DepositStatus status,
+            uint256 renewedDepositId
+        )
+    {
+        DepositCertificate memory deposit = depositCertificates[depositId];
+        return (
+            deposit.owner,
+            deposit.planId,
+            deposit.principal,
+            deposit.startAt,
+            deposit.maturityAt,
+            deposit.status,
+            deposit.renewedDepositId
+        );
     }
 
     /*//////////////////////////////////////////////////////////////
     //////////////         HELPER FUNCTIONS       //////////////////
     //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @notice tính toán lãi
-     */
-    function _calculateInterest(uint256 id) internal view returns (uint256) {
-        DepositCertificate memory deposit = depositCertificates[id];
+    function _calculateInterest(
+        uint256 depositId
+    ) internal view returns (uint256) {
+        DepositCertificate memory deposit = depositCertificates[depositId];
 
         uint256 tenorSeconds = deposit.snapshotTenorDays * 1 days;
 
-        uint256 interest = (deposit.principal *
+        uint256 interestAmount = (deposit.principal *
             deposit.snapshotAprBps *
             tenorSeconds) / (SECONDS_PER_YEAR * BASIS_POINTS);
 
-        return interest;
+        return interestAmount;
     }
 }

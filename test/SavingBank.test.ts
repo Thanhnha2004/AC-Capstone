@@ -88,6 +88,13 @@ describe("SavingBank", function () {
     await vault.setSavingBank(await savingBank.getAddress());
   };
 
+  enum DepositStatus {
+    Active = 0,
+    Withdrawn = 1,
+    EarlyWithdrawn = 2,
+    Renewed = 3,
+  }
+
   const createDefaultPlans = async () => {
     // Plan 1: 7 days, 5% APR
     await savingBank.createPlan(
@@ -146,8 +153,8 @@ describe("SavingBank", function () {
     });
 
     it("Should set the initial planId and depositId to 1", async function () {
-      const planId = await savingBank.planId();
-      const depositId = await savingBank.depositId();
+      const planId = await savingBank.nextPlanId();
+      const depositId = await savingBank.nextDepositId();
       expect(planId).to.equal(1n);
       expect(depositId).to.equal(1n);
     });
@@ -221,7 +228,7 @@ describe("SavingBank", function () {
     });
 
     it("Should create saving plan", async function () {
-      const planId = await savingBank.planId();
+      const planId = await savingBank.nextPlanId();
       const tx = await savingBank.createPlan(
         7,
         500,
@@ -232,7 +239,7 @@ describe("SavingBank", function () {
       await tx.wait();
 
       const plan = await savingBank.savingPlans(1);
-      const nextPlanId = await savingBank.planId();
+      const nextPlanId = await savingBank.nextPlanId();
 
       expect(planId).to.equal(1);
       expect(plan.tenorDays).to.equal(7);
@@ -245,7 +252,7 @@ describe("SavingBank", function () {
     });
 
     it("Should emit event PlanCreated", async function () {
-      const planId = await savingBank.planId();
+      const planId = await savingBank.nextPlanId();
 
       await expect(
         savingBank.createPlan(
@@ -459,7 +466,7 @@ describe("SavingBank", function () {
       const maturity = txTimestamp + 7 * 86400;
 
       const deposit = await savingBank.depositCertificates(depositId);
-      const nextDepositId = await savingBank.depositId();
+      const nextDepositId = await savingBank.nextDepositId();
       let userDepositIds: bigint[] = await savingBank.getUserDepositIds(
         addr1.address,
       );
@@ -469,15 +476,15 @@ describe("SavingBank", function () {
       expect(deposit.principal).to.equal(ethers.parseEther("100"));
       expect(deposit.startAt).to.equal(txTimestamp);
       expect(deposit.maturityAt).to.equal(maturity);
-      expect(deposit.status).to.equal(true);
-      expect(deposit.renew).to.equal(0);
+      expect(deposit.status).to.equal(DepositStatus.Active);
+      expect(deposit.renewedDepositId).to.equal(0);
       expect(nextDepositId).to.equal(2);
       expect(userDepositIds).to.deep.equal([depositId]);
       expect(await savingBank.ownerOf(depositId)).to.equal(addr1.address);
     });
 
     it("Should emit event DepositCertificateOpened", async function () {
-      const depositId = await savingBank.depositId();
+      const depositId = await savingBank.nextDepositId();
 
       const tx = await savingBank
         .connect(addr1)
@@ -545,7 +552,7 @@ describe("SavingBank", function () {
       const balanceAfter = await token.balanceOf(addr1.address);
       const nftBalanceAfter = await savingBank.balanceOf(addr1.address);
 
-      expect(deposit.status).to.equal(false);
+      expect(deposit.status).to.equal(DepositStatus.Withdrawn);
       expect(balanceAfter - balanceBefore).to.equal(
         interest + deposit.principal,
       );
@@ -564,70 +571,84 @@ describe("SavingBank", function () {
       await expect(tx)
         .to.emit(savingBank, "Withdrawn")
         .withArgs(
-          1, addr1.address, deposit.principal, interest, deposit.status
+          1,
+          addr1.address,
+          deposit.principal,
+          interest,
+          DepositStatus.Withdrawn,
         );
     });
   });
 
   describe("earlyWithdraw", function () {
-  beforeEach(async () => {
-    await createDefaultPlans();
-    await fundVault(ethers.parseEther("1000"));
-    await openDepositCertificate(1n, ethers.parseEther("100"));
+    beforeEach(async () => {
+      await createDefaultPlans();
+      await fundVault(ethers.parseEther("1000"));
+      await openDepositCertificate(1n, ethers.parseEther("100"));
+    });
+
+    it("Should revert if not owner", async function () {
+      await expect(savingBank.connect(addr2).earlyWithdraw(1))
+        .to.be.revertedWithCustomError(savingBank, "NotOwner")
+        .withArgs();
+    });
+
+    it("Should revert if deposit not active", async function () {
+      await savingBank.connect(addr1).earlyWithdraw(1);
+
+      await expect(savingBank.connect(addr1).earlyWithdraw(1))
+        .to.be.revertedWithCustomError(savingBank, "NotActiveDeposit")
+        .withArgs();
+    });
+
+    it("Should revert if already matured", async function () {
+      await time.increase(7 * 24 * 60 * 60);
+
+      await expect(savingBank.connect(addr1).earlyWithdraw(1))
+        .to.be.revertedWithCustomError(savingBank, "AlreadyMatured")
+        .withArgs();
+    });
+
+    it("Should early withdraw with penalty", async function () {
+      const depositId = 1;
+      const deposit = await savingBank.depositCertificates(depositId);
+      const penalty = (deposit.principal * 300n) / 10000n; // 3% penalty
+
+      const userBalanceBefore = await token.balanceOf(addr1.address);
+      const feeReceiverBalanceBefore = await token.balanceOf(receiver1.address);
+      const nftBalanceBefore = await savingBank.balanceOf(addr1.address);
+
+      await savingBank.connect(addr1).earlyWithdraw(depositId);
+
+      const userBalanceAfter = await token.balanceOf(addr1.address);
+      const feeReceiverBalanceAfter = await token.balanceOf(receiver1.address);
+      const nftBalanceAfter = await savingBank.balanceOf(addr1.address);
+      const updatedDeposit = await savingBank.depositCertificates(depositId);
+
+      expect(updatedDeposit.status).to.equal(DepositStatus.EarlyWithdrawn);
+      expect(userBalanceAfter - userBalanceBefore).to.equal(
+        deposit.principal - penalty,
+      );
+      expect(feeReceiverBalanceAfter - feeReceiverBalanceBefore).to.equal(
+        penalty,
+      );
+      expect(nftBalanceAfter).to.equal(nftBalanceBefore - 1n);
+    });
+
+    it("Should emit EarlyWithdrawn event", async function () {
+      const depositId = 1;
+      const deposit = await savingBank.depositCertificates(depositId);
+      const penalty = (deposit.principal * 300n) / 10000n;
+
+      await expect(savingBank.connect(addr1).earlyWithdraw(depositId))
+        .to.emit(savingBank, "EarlyWithdrawn")
+        .withArgs(
+          depositId,
+          addr1.address,
+          deposit.principal - penalty,
+          penalty,
+          DepositStatus.EarlyWithdrawn,
+        );
+    });
   });
-
-  it("Should revert if not owner", async function () {
-    await expect(savingBank.connect(addr2).earlyWithdraw(1))
-      .to.be.revertedWithCustomError(savingBank, "NotOwner")
-      .withArgs();
-  });
-
-  it("Should revert if deposit not active", async function () {
-    await savingBank.connect(addr1).earlyWithdraw(1);
-
-    await expect(savingBank.connect(addr1).earlyWithdraw(1))
-      .to.be.revertedWithCustomError(savingBank, "NotActiveDeposit")
-      .withArgs();
-  });
-
-  it("Should revert if already matured", async function () {
-    await time.increase(7 * 24 * 60 * 60);
-
-    await expect(savingBank.connect(addr1).earlyWithdraw(1))
-      .to.be.revertedWithCustomError(savingBank, "AlreadyMatured")
-      .withArgs();
-  });
-
-  it("Should early withdraw with penalty", async function () {
-    const depositId = 1;
-    const deposit = await savingBank.depositCertificates(depositId);
-    const penalty = (deposit.principal * 300n) / 10000n; // 3% penalty
-    
-    const userBalanceBefore = await token.balanceOf(addr1.address);
-    const feeReceiverBalanceBefore = await token.balanceOf(receiver1.address);
-    const nftBalanceBefore = await savingBank.balanceOf(addr1.address);
-
-    await savingBank.connect(addr1).earlyWithdraw(depositId);
-
-    const userBalanceAfter = await token.balanceOf(addr1.address);
-    const feeReceiverBalanceAfter = await token.balanceOf(receiver1.address);
-    const nftBalanceAfter = await savingBank.balanceOf(addr1.address);
-    const updatedDeposit = await savingBank.depositCertificates(depositId);
-
-    expect(updatedDeposit.status).to.equal(false);
-    expect(userBalanceAfter - userBalanceBefore).to.equal(deposit.principal - penalty);
-    expect(feeReceiverBalanceAfter - feeReceiverBalanceBefore).to.equal(penalty);
-    expect(nftBalanceAfter).to.equal(nftBalanceBefore - 1n);
-  });
-
-  it("Should emit EarlyWithdrawn event", async function () {
-    const depositId = 1;
-    const deposit = await savingBank.depositCertificates(depositId);
-    const penalty = (deposit.principal * 300n) / 10000n;
-
-    await expect(savingBank.connect(addr1).earlyWithdraw(depositId))
-      .to.emit(savingBank, "EarlyWithdrawn")
-      .withArgs(depositId, addr1.address, deposit.principal - penalty, penalty, false);
-  });
-});
 });

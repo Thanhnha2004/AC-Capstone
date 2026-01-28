@@ -26,6 +26,11 @@
         "type": "error"
     },
     {
+        "inputs": [],
+        "name": "AlreadyRenewed",
+        "type": "error"
+    },
+    {
         "inputs": [
             {
                 "internalType": "address",
@@ -300,7 +305,7 @@
         "anonymous": false,
         "inputs": [
             {
-                "indexed": false,
+                "indexed": true,
                 "internalType": "uint256",
                 "name": "depositId",
                 "type": "uint256"
@@ -312,7 +317,7 @@
                 "type": "address"
             },
             {
-                "indexed": false,
+                "indexed": true,
                 "internalType": "uint256",
                 "name": "planId",
                 "type": "uint256"
@@ -320,13 +325,13 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "amount",
+                "name": "depositAmount",
                 "type": "uint256"
             },
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "maturity",
+                "name": "maturityTimestamp",
                 "type": "uint256"
             }
         ],
@@ -337,7 +342,7 @@
         "anonymous": false,
         "inputs": [
             {
-                "indexed": false,
+                "indexed": true,
                 "internalType": "uint256",
                 "name": "depositId",
                 "type": "uint256"
@@ -351,20 +356,20 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "principal",
+                "name": "amountReceived",
                 "type": "uint256"
             },
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "penalty",
+                "name": "penaltyAmount",
                 "type": "uint256"
             },
             {
                 "indexed": false,
-                "internalType": "bool",
-                "name": "status",
-                "type": "bool"
+                "internalType": "enum SavingBank.DepositStatus",
+                "name": "finalStatus",
+                "type": "uint8"
             }
         ],
         "name": "EarlyWithdrawn",
@@ -419,7 +424,7 @@
         "anonymous": false,
         "inputs": [
             {
-                "indexed": false,
+                "indexed": true,
                 "internalType": "uint256",
                 "name": "planId",
                 "type": "uint256"
@@ -462,7 +467,7 @@
         "anonymous": false,
         "inputs": [
             {
-                "indexed": false,
+                "indexed": true,
                 "internalType": "uint256",
                 "name": "planId",
                 "type": "uint256"
@@ -470,11 +475,42 @@
             {
                 "indexed": false,
                 "internalType": "bool",
-                "name": "status",
+                "name": "isEnabled",
                 "type": "bool"
             }
         ],
         "name": "PlanUpdated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "oldDepositId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "newDepositId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newPrincipal",
+                "type": "uint256"
+            }
+        ],
+        "name": "Renewed",
         "type": "event"
     },
     {
@@ -532,7 +568,7 @@
         "anonymous": false,
         "inputs": [
             {
-                "indexed": false,
+                "indexed": true,
                 "internalType": "uint256",
                 "name": "depositId",
                 "type": "uint256"
@@ -546,20 +582,20 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "principal",
+                "name": "principalAmount",
                 "type": "uint256"
             },
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "interest",
+                "name": "interestAmount",
                 "type": "uint256"
             },
             {
                 "indexed": false,
-                "internalType": "bool",
-                "name": "status",
-                "type": "bool"
+                "internalType": "enum SavingBank.DepositStatus",
+                "name": "finalStatus",
+                "type": "uint8"
             }
         ],
         "name": "Withdrawn",
@@ -671,13 +707,13 @@
                 "type": "uint256"
             },
             {
-                "internalType": "bool",
+                "internalType": "enum SavingBank.DepositStatus",
                 "name": "status",
-                "type": "bool"
+                "type": "uint8"
             },
             {
                 "internalType": "uint256",
-                "name": "renew",
+                "name": "renewedDepositId",
                 "type": "uint256"
             },
             {
@@ -700,23 +736,10 @@
         "type": "function"
     },
     {
-        "inputs": [],
-        "name": "depositId",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
         "inputs": [
             {
                 "internalType": "uint256",
-                "name": "id",
+                "name": "depositId",
                 "type": "uint256"
             }
         ],
@@ -761,7 +784,7 @@
         "inputs": [
             {
                 "internalType": "uint256",
-                "name": "id",
+                "name": "depositId",
                 "type": "uint256"
             }
         ],
@@ -780,7 +803,56 @@
         "inputs": [
             {
                 "internalType": "uint256",
-                "name": "id",
+                "name": "depositId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getDepositInfo",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "planId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "principal",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "startAt",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "maturityAt",
+                "type": "uint256"
+            },
+            {
+                "internalType": "enum SavingBank.DepositStatus",
+                "name": "status",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint256",
+                "name": "renewedDepositId",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "planId",
                 "type": "uint256"
             }
         ],
@@ -877,15 +949,41 @@
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "nextDepositId",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "nextPlanId",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [
             {
                 "internalType": "uint256",
-                "name": "id",
+                "name": "planId",
                 "type": "uint256"
             },
             {
                 "internalType": "uint256",
-                "name": "amount",
+                "name": "depositAmount",
                 "type": "uint256"
             }
         ],
@@ -941,19 +1039,6 @@
                 "internalType": "bool",
                 "name": "",
                 "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "planId",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
             }
         ],
         "stateMutability": "view",
@@ -1216,7 +1301,7 @@
         "inputs": [
             {
                 "internalType": "uint256",
-                "name": "id",
+                "name": "planId",
                 "type": "uint256"
             },
             {
@@ -1254,12 +1339,12 @@
         "inputs": [
             {
                 "internalType": "uint256",
-                "name": "id",
+                "name": "planId",
                 "type": "uint256"
             },
             {
                 "internalType": "bool",
-                "name": "enabled",
+                "name": "isEnabled",
                 "type": "bool"
             }
         ],
@@ -1309,7 +1394,7 @@
         "inputs": [
             {
                 "internalType": "uint256",
-                "name": "id",
+                "name": "depositId",
                 "type": "uint256"
             }
         ],
