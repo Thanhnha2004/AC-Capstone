@@ -32,6 +32,10 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
     error InvalidMaxDeposit();
     error NotExceed();
     error InvalidPlanId();
+    error NotOwner();
+    error NotActiveDeposit();
+    error NotMaturedYet();
+    error AlreadyMatured();
 
     /*//////////////////////////////////////////////////////////////
     ////////////////////         STRUCTS       /////////////////////
@@ -68,7 +72,6 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
     uint256 private constant SECONDS_PER_YEAR = 365 days;
     uint256 private constant BASIS_POINTS = 10000;
-    uint256 private constant DEFAULT_GRACE_PERIOD = 7 days;
 
     /*//////////////////////////////////////////////////////////////
     ////////////////         STATE VARIABLES       /////////////////
@@ -119,6 +122,27 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
     event FeeReceiverUpdated(address indexed newFeeReceiver);
     event PlanUpdated(uint256 planId, bool status);
     event VaultUpdated(address indexed newVault);
+    event DepositCertificateOpened(
+        uint256 depositId,
+        address indexed user,
+        uint256 planId,
+        uint256 amount,
+        uint256 maturity
+    );
+    event Withdrawn(
+        uint256 depositId,
+        address indexed user,
+        uint256 principal,
+        uint256 interest,
+        bool status
+    );
+    event EarlyWithdrawn(
+        uint256 depositId,
+        address indexed user,
+        uint256 principal,
+        uint256 penalty,
+        bool status
+    );
 
     /*//////////////////////////////////////////////////////////////
     ///////////////////         MODIFIERS       ////////////////////
@@ -127,6 +151,100 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
     ///////////////         CORE FUNCTIONS       ///////////////////
     //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice mở số tiết kiệm
+     */
+    function openDepositCertificate(
+        uint256 id,
+        uint256 amount
+    ) external whenNotPaused nonReentrant {
+        SavingPlan memory plan = savingPlans[id];
+
+        if (!plan.enabled) revert NotEnabledPlan();
+        if (amount < plan.minDeposit) revert InvalidAmount();
+        if (plan.maxDeposit > 0 && amount > plan.maxDeposit)
+            revert InvalidAmount();
+
+        address user = msg.sender;
+        uint256 currentId = depositId;
+        uint256 maturity = block.timestamp + (plan.tenorDays * 1 days);
+
+        depositCertificates[currentId] = DepositCertificate({
+            owner: user,
+            planId: id,
+            principal: amount,
+            startAt: block.timestamp,
+            maturityAt: maturity,
+            status: true,
+            renew: 0,
+            snapshotAprBps: plan.aprBps,
+            snapshotTenorDays: plan.tenorDays,
+            snapshotEarlyWithdrawPenaltyBps: plan.earlyWithdrawPenaltyBps
+        });
+
+        userDepositIds[user].push(currentId);
+        depositId++;
+
+        token.safeTransferFrom(user, address(this), amount);
+
+        _safeMint(user, currentId);
+
+        emit DepositCertificateOpened(currentId, user, id, amount, maturity);
+    }
+
+    /**
+     * @notice rút đúng hạn (gốc + lãi)
+     */
+    function withdraw(uint256 id) external nonReentrant {
+        DepositCertificate storage deposit = depositCertificates[id];
+        address user = msg.sender;
+
+        if (user != deposit.owner) revert NotOwner();
+        if (!deposit.status) revert NotActiveDeposit();
+        if (block.timestamp < deposit.maturityAt) revert NotMaturedYet();
+
+        uint256 interest = _calculateInterest(id);
+
+        deposit.status = false;
+
+        token.safeTransfer(user, deposit.principal);
+
+        vault.payInterest(user, interest);
+
+        _burn(id);
+
+        emit Withdrawn(id, user, deposit.principal, interest, deposit.status);
+    }
+
+    /**
+     * @notice rút trước hạn (gốc - phạt)
+     */
+    function earlyWithdraw(uint256 id) external nonReentrant {
+        DepositCertificate storage deposit = depositCertificates[id];
+
+        if (msg.sender != deposit.owner) revert NotOwner();
+        if (!deposit.status) revert NotActiveDeposit();
+        if (block.timestamp >= deposit.maturityAt) revert AlreadyMatured();
+
+        uint256 penalty = (deposit.principal *
+            deposit.snapshotEarlyWithdrawPenaltyBps) / BASIS_POINTS;
+
+        deposit.status = false;
+
+        token.safeTransfer(msg.sender, deposit.principal - penalty);
+        token.safeTransfer(feeReceiver, penalty);
+
+        _burn(id);
+
+        emit EarlyWithdrawn(
+            id,
+            msg.sender,
+            deposit.principal - penalty,
+            penalty,
+            false
+        );
+    }
 
     /*//////////////////////////////////////////////////////////////
     //////////////         ADMIN FUNCTIONS       ///////////////////
@@ -283,7 +401,38 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
         );
     }
 
+    /**
+     * @notice lấy id deposit của user
+     */
+    function getUserDepositIds(
+        address user
+    ) external view returns (uint256[] memory) {
+        return userDepositIds[user];
+    }
+
+    /**
+     * @notice lấy lãi suất của 1 deposit
+     */
+    function getCalculateInterest(uint256 id) external view returns (uint256) {
+        return _calculateInterest(id);
+    }
+
     /*//////////////////////////////////////////////////////////////
     //////////////         HELPER FUNCTIONS       //////////////////
     //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice tính toán lãi
+     */
+    function _calculateInterest(uint256 id) internal view returns (uint256) {
+        DepositCertificate memory deposit = depositCertificates[id];
+
+        uint256 tenorSeconds = deposit.snapshotTenorDays * 1 days;
+
+        uint256 interest = (deposit.principal *
+            deposit.snapshotAprBps *
+            tenorSeconds) / (SECONDS_PER_YEAR * BASIS_POINTS);
+
+        return interest;
+    }
 }

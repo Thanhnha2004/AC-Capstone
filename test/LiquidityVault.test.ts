@@ -2,7 +2,7 @@ import "@nomicfoundation/hardhat-ethers";
 import { ethers } from "hardhat";
 import { expect } from "chai";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
-import { ERC20Mock, LiquidityVault } from "../typechain";
+import { ERC20Mock, LiquidityVault, SavingBank } from "../typechain";
 
 describe("LiquidityVault", function () {
   let deployer: SignerWithAddress,
@@ -22,6 +22,7 @@ describe("LiquidityVault", function () {
 
   let vault: LiquidityVault;
   let token: ERC20Mock;
+  let savingBank: SavingBank;
 
   const SECONDS_PER_YEAR = 365 * 86400;
   const BASIS_POINTS = 10000;
@@ -55,6 +56,11 @@ describe("LiquidityVault", function () {
       await ethers.getContractFactory("LiquidityVault")
     ).deploy(await token.getAddress());
 
+    // deploy Staking contract
+    savingBank = await (
+      await ethers.getContractFactory("SavingBank")
+    ).deploy(await token.getAddress(), vault.getAddress(), receiver1);
+
     // Mint tokens cho users
     await token.mint(deployer.address, ethers.parseEther("10000"));
     await token.mint(addr1.address, ethers.parseEther("10000"));
@@ -75,6 +81,7 @@ describe("LiquidityVault", function () {
       .connect(addr3)
       .approve(await vault.getAddress(), ethers.MaxUint256);
 
+    await vault.setSavingBank(await savingBank.getAddress());
   };
 
   const fundVault = async (amount: bigint) => {
