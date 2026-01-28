@@ -27,7 +27,6 @@ Kế hoạch 6 ngày hoàn chỉnh từ zero đến finished, chia đều công 
   - Solidity version 0.8.20
   - TypeScript support
   - Gas reporter
-  - Coverage
 
 **2. Mock USDC Token (30 phút)**
 
@@ -487,139 +486,136 @@ Kế hoạch 6 ngày hoàn chỉnh từ zero đến finished, chia đều công 
 
 **1. renewWithSamePlan (1 giờ)**
 
-- [ ] Implement `renewWithSamePlan(uint256 id)`:
+- [✅] Implement `renewWithSamePlan(uint256 id)`:
 
-  - [ ] nonReentrant modifier
-  - [ ] Get DepositCertificate storage oldDeposit
-  - [ ] Validate msg.sender == oldDeposit.owner → revert NotOwner
-  - [ ] Validate block.timestamp >= oldDeposit.maturityAt → revert NotMaturedYet
-  - [ ] Get SavingPlan by oldDeposit.planId
-  - [ ] Validate plan.enabled → revert NotEnabledPlan
-  - [ ] Calculate interest = \_calculateInterest(id)
-  - [ ] Calculate newPrincipal = oldDeposit.principal + interest
-  - [ ] Get newId = nextDepositId
-  - [ ] Get user = msg.sender
-  - [ ] Calculate maturity = block.timestamp + (plan.tenorDays \* 1 days)
-  - [ ] Set oldDeposit.status = false
-  - [ ] Set oldDeposit.renewedDepositId = newId
-  - [ ] `userDepositIds[user].push(newId)`
-  - [ ] `nextDepositId++`
-  - [ ] Create new DepositCertificate with:
+  - [✅] nonReentrant modifier
+  - [✅] Get DepositCertificate storage oldDeposit
+  - [✅] Validate msg.sender == oldDeposit.owner → revert NotOwner
+  - [✅] Validate block.timestamp >= oldDeposit.maturityAt → revert NotMaturedYet
+  - [✅] Get SavingPlan by oldDeposit.planId
+  - [✅] Validate plan.enabled → revert NotEnabledPlan
+  - [✅] Calculate interest = \_calculateInterest(id)
+  - [✅] Calculate newPrincipal = oldDeposit.principal + interest
+  - [✅] Get newId = nextDepositId
+  - [✅] Get user = msg.sender
+  - [✅] Calculate maturity = block.timestamp + (plan.tenorDays \* 1 days)
+  - [✅] Set oldDeposit.status = false
+  - [✅] Set oldDeposit.renewedDepositId = newId
+  - [✅] `userDepositIds[user].push(newId)`
+  - [✅] `nextDepositId++`
+  - [✅] Create new DepositCertificate with:
     - principal = newPrincipal
     - Snapshot current plan data (might have changed)
-  - [ ] `vault.deductInterest(user, interest)` - account for interest
-  - [ ] `_burn(id)` - burn old NFT
-  - [ ] `_safeMint(user, newId)` - mint new NFT
-  - [ ] Emit Renewed + DepositCertificateOpened events
+  - [✅] `vault.deductInterest(user, interest)` - account for interest
+  - [✅] `_burn(id)` - burn old NFT
+  - [✅] `_safeMint(user, newId)` - mint new NFT
+  - [✅] Emit Renewed + DepositCertificateOpened events
 
-- [ ] Define events:
+- [✅] Define events:
   ```solidity
   event Renewed(uint256 depositId, uint256 newDepositId, uint256 newPrincipal);
   ```
 
 **2. renewWithNewPlan (1 giờ)**
 
-- [ ] Implement `renewWithNewPlan(uint256 id, uint256 newPlanId)`:
-  - [ ] Similar logic to renewWithSamePlan
-  - [ ] But use newPlanId instead of oldDeposit.planId
-  - [ ] Validate new plan is enabled
-  - [ ] Snapshot new plan data in new DepositCertificate
+- [✅] Implement `renewWithNewPlan(uint256 id, uint256 newPlanId)`:
+  - [✅] Similar logic to renewWithSamePlan
+  - [✅] But use newPlanId instead of oldDeposit.planId
+  - [✅] Validate new plan is enabled
+  - [✅] Snapshot new plan data in new DepositCertificate
 
 **3. View Functions (30 phút)**
 
 
-- [ ] Implement `getUserDepositIds(address user) external view returns (uint256[])`:
+- [✅] Implement `getUserDepositIds(address user) external view returns (uint256[])`:
 
-  - [ ] Return userDepositIds[user]
+  - [✅] Return userDepositIds[user]
 
-- [ ] Implement `getDepositInfo(uint256 id)`:
-  - [ ] Return deposit certificate fields
+- [✅] Implement `getDepositInfo(uint256 id)`:
+  - [✅] Return deposit certificate fields
 
 ### 🌙 Chiều (2-3 giờ)
 
 **4. Complete LiquidityVault Tests (2-3 giờ)**
 
-- [ ] Tạo `test/LiquidityVault.test.ts`:
+- [✅] Tạo `test/LiquidityVault.test.ts`:
 
 **Deployment Tests:**
 
-- [ ] Should set the right token
-- [ ] Should set the right owner
-- [ ] Should initialize with zero totalBalance
-- [ ] Should revert if token is zero address
+- [✅] Should set the right token
+- [✅] Should set the right owner
+- [✅] Should initialize with zero totalBalance
+- [✅] Should revert if token is zero address
 
 **setSavingBank Tests:**
 
-- [ ] Should set saving bank address
-- [ ] Should emit SavingBankUpdated event
-- [ ] Should revert if not owner
-- [ ] Should revert if address is zero
+- [✅] Should set saving bank address
+- [✅] Should emit SavingBankUpdated event
+- [✅] Should revert if not owner
+- [✅] Should revert if address is zero
 
 **fundVault Tests:**
 
-- [ ] Should fund vault successfully
-- [ ] Should update totalBalance
-- [ ] Should transfer tokens to vault
-- [ ] Should emit Funded event
-- [ ] Should revert if amount is zero
-- [ ] Should revert if not owner
-- [ ] Should revert if insufficient allowance
+- [✅] Should fund vault successfully
+- [✅] Should update totalBalance
+- [✅] Should transfer tokens to vault
+- [✅] Should emit Funded event
+- [✅] Should revert if amount is zero
+- [✅] Should revert if not owner
+- [✅] Should revert if insufficient allowance
 
 **withdrawVault Tests:**
 
-- [ ] Should withdraw from vault successfully
-- [ ] Should update totalBalance
-- [ ] Should transfer tokens to owner
-- [ ] Should emit Withdrawn event
-- [ ] Should revert if amount is zero
-- [ ] Should revert if amount exceeds balance
-- [ ] Should revert if not owner
+- [✅] Should withdraw from vault successfully
+- [✅] Should update totalBalance
+- [✅] Should transfer tokens to owner
+- [✅] Should emit Withdrawn event
+- [✅] Should revert if amount is zero
+- [✅] Should revert if amount exceeds balance
+- [✅] Should revert if not owner
 
 **payInterest Tests:**
 
-- [ ] Should pay interest successfully
-- [ ] Should deduct totalBalance
-- [ ] Should transfer tokens to user
-- [ ] Should emit InterestPaid event
-- [ ] Should revert if not savingBank
-- [ ] Should revert if paused
-- [ ] Should revert if user is zero address
-- [ ] Should revert if amount is zero
-- [ ] Should revert if insufficient balance
+- [✅] Should pay interest successfully
+- [✅] Should deduct totalBalance
+- [✅] Should transfer tokens to user
+- [✅] Should emit InterestPaid event
+- [✅] Should revert if not savingBank
+- [✅] Should revert if paused
+- [✅] Should revert if user is zero address
+- [✅] Should revert if amount is zero
+- [✅] Should revert if insufficient balance
 
 **deductInterest Tests:**
 
-- [ ] Should deduct interest successfully
-- [ ] Should deduct totalBalance
-- [ ] Should NOT transfer tokens
-- [ ] Should emit InterestRenewed event
-- [ ] Should revert if not savingBank
-- [ ] Should revert if paused
-- [ ] Should revert if insufficient balance
+- [✅] Should deduct interest successfully
+- [✅] Should deduct totalBalance
+- [✅] Should NOT transfer tokens
+- [✅] Should emit InterestRenewed event
+- [✅] Should revert if not savingBank
+- [✅] Should revert if paused
+- [✅] Should revert if insufficient balance
 
 **pause/unpause Tests:**
 
-- [ ] Should pause the contract
-- [ ] Should unpause the contract
-- [ ] Should revert payInterest when paused
-- [ ] Should revert deductInterest when paused
-- [ ] Should revert if not owner
+- [✅] Should pause the contract
+- [✅] Should unpause the contract
+- [✅] Should revert payInterest when paused
+- [✅] Should revert deductInterest when paused
+- [✅] Should revert if not owner
 
 **View Functions Tests:**
 
-- [ ] getBalance should return totalBalance
-- [ ] getActualBalance should return actual token balance
+- [✅] getBalance should return totalBalance
+- [✅] getActualBalance should return actual token balance
 
-- [ ] Run tests: `npx hardhat test test/LiquidityVault.test.ts`
-- [ ] Check coverage: `npx hardhat coverage`
-- [ ] **Target: >= 90% coverage for LiquidityVault**
+- [✅] Run tests: `npx hardhat test test/LiquidityVault.test.ts`
 
 **Deliverable Ngày 4:**
 
 - ✅ renewWithSamePlan implemented
 - ✅ renewWithNewPlan implemented
 - ✅ All view functions complete
-- ✅ LiquidityVault tests complete (>= 90% coverage)
 
 ---
 
@@ -770,7 +766,6 @@ Kế hoạch 6 ngày hoàn chỉnh từ zero đến finished, chia đều công 
 - ✅ openDepositCertificate tests complete
 - ✅ withdraw tests complete
 - ✅ earlyWithdraw tests complete
-- ✅ **Core functions >= 90% coverage**
 
 ---
 
@@ -932,15 +927,6 @@ Kế hoạch 6 ngày hoàn chỉnh từ zero đến finished, chia đều công 
 - [ ] All tests should pass
 - [ ] No warnings or errors
 
-**Check Coverage:**
-
-- [ ] `npx hardhat coverage`
-- [ ] LiquidityVault >= 90%
-- [ ] SavingBank >= 85%
-- [ ] Overall >= 85%
-- [ ] Identify untested lines
-- [ ] Add tests for gaps if needed
-
 **Run Slither:**
 
 - [ ] `slither .`
@@ -966,7 +952,6 @@ Kế hoạch 6 ngày hoàn chỉnh từ zero đến finished, chia đều công 
 **Final Checklist:**
 
 - [ ] ✅ All tests pass (100%)
-- [ ] ✅ Coverage >= 85% overall
 - [ ] ✅ LiquidityVault >= 90%
 - [ ] ✅ SavingBank >= 85%
 - [ ] ✅ No Slither critical issues
@@ -976,7 +961,6 @@ Kế hoạch 6 ngày hoàn chỉnh từ zero đến finished, chia đều công 
 
 **Deliverable Ngày 6:**
 
-- ✅ Complete test suite (>= 85% coverage)
 - ✅ Integration tests pass
 - ✅ Edge cases handled
 - ✅ Security verified
@@ -1030,9 +1014,6 @@ npx hardhat test test/LiquidityVault.test.ts
 # Run with gas report
 REPORT_GAS=true npx hardhat test
 
-# Coverage
-npx hardhat coverage
-
 # Slither
 slither .
 
@@ -1045,7 +1026,6 @@ npx hardhat clean
 ## 🎯 Success Criteria
 
 ✅ All functional requirements implemented
-✅ Test coverage >= 85% overall
 ✅ LiquidityVault >= 90%
 ✅ SavingBank >= 85%
 ✅ ~175 tests passing

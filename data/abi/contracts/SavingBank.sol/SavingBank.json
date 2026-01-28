@@ -498,12 +498,6 @@
                 "type": "uint256"
             },
             {
-                "indexed": true,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
                 "indexed": false,
                 "internalType": "uint256",
                 "name": "newPrincipal",
@@ -1042,6 +1036,37 @@
             }
         ],
         "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "depositId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "newPlanId",
+                "type": "uint256"
+            }
+        ],
+        "name": "renewWithNewPlan",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "depositId",
+                "type": "uint256"
+            }
+        ],
+        "name": "renewWithSamePlan",
+        "outputs": [],
+        "stateMutability": "nonpayable",
         "type": "function"
     },
     {

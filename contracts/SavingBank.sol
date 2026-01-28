@@ -153,7 +153,6 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
     event Renewed(
         uint256 indexed oldDepositId,
         uint256 indexed newDepositId,
-        address indexed user,
         uint256 newPrincipal
     );
 
@@ -268,6 +267,115 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
             amountAfterPenalty,
             penaltyAmount,
             deposit.status
+        );
+    }
+
+    /**
+     * @notice gia hạn cùng plan
+     */
+    function renewWithSamePlan(uint256 depositId) external nonReentrant {
+        DepositCertificate storage oldDeposit = depositCertificates[depositId];
+
+        if (msg.sender != oldDeposit.owner) revert NotOwner();
+        if (block.timestamp < oldDeposit.maturityAt) revert NotMaturedYet();
+
+        SavingPlan memory plan = savingPlans[oldDeposit.planId];
+        if (!plan.enabled) revert NotEnabledPlan();
+
+        uint256 interest = _calculateInterest(depositId);
+
+        uint256 newPrincipal = oldDeposit.principal + interest;
+        uint256 newId = nextDepositId;
+        address user = msg.sender;
+        uint256 maturity = block.timestamp + (plan.tenorDays * 1 days);
+
+        oldDeposit.status = DepositStatus.Renewed;
+        oldDeposit.renewedDepositId = newId;
+
+        userDepositIds[user].push(newId);
+        nextDepositId++;
+
+        depositCertificates[newId] = DepositCertificate({
+            owner: user,
+            planId: oldDeposit.planId,
+            principal: newPrincipal,
+            startAt: block.timestamp,
+            maturityAt: maturity,
+            status: DepositStatus.Active,
+            renewedDepositId: 0,
+            snapshotAprBps: plan.aprBps,
+            snapshotTenorDays: plan.tenorDays,
+            snapshotEarlyWithdrawPenaltyBps: plan.earlyWithdrawPenaltyBps
+        });
+
+        vault.deductInterest(user, interest);
+
+        _burn(depositId);
+        _safeMint(user, newId);
+
+        emit Renewed(depositId, newId, newPrincipal);
+        emit DepositCertificateOpened(
+            newId,
+            user,
+            oldDeposit.planId,
+            newPrincipal,
+            maturity
+        );
+    }
+
+    /**
+     * @notice gia hạn khác plan
+     */
+    function renewWithNewPlan(
+        uint256 depositId,
+        uint256 newPlanId
+    ) external nonReentrant {
+        DepositCertificate storage oldDeposit = depositCertificates[depositId];
+
+        if (msg.sender != oldDeposit.owner) revert NotOwner();
+        if (block.timestamp < oldDeposit.maturityAt) revert NotMaturedYet();
+
+        SavingPlan memory plan = savingPlans[newPlanId];
+        if (!plan.enabled) revert NotEnabledPlan();
+
+        uint256 interest = _calculateInterest(depositId);
+
+        uint256 newPrincipal = oldDeposit.principal + interest;
+        uint256 newId = nextDepositId;
+        address user = msg.sender;
+        uint256 maturity = block.timestamp + (plan.tenorDays * 1 days);
+
+        oldDeposit.status = DepositStatus.Renewed;
+        oldDeposit.renewedDepositId = newId;
+
+        userDepositIds[user].push(newId);
+        nextDepositId++;
+
+        vault.deductInterest(user, interest);
+
+        depositCertificates[newId] = DepositCertificate({
+            owner: user,
+            planId: newPlanId,
+            principal: newPrincipal,
+            startAt: block.timestamp,
+            maturityAt: maturity,
+            status: DepositStatus.Active,
+            renewedDepositId: 0,
+            snapshotAprBps: plan.aprBps,
+            snapshotTenorDays: plan.tenorDays,
+            snapshotEarlyWithdrawPenaltyBps: plan.earlyWithdrawPenaltyBps
+        });
+
+        _burn(depositId);
+        _safeMint(user, newId);
+
+        emit Renewed(depositId, newId, newPrincipal);
+        emit DepositCertificateOpened(
+            newId,
+            user,
+            newPlanId,
+            newPrincipal,
+            maturity
         );
     }
 
