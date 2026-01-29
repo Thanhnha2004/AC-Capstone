@@ -173,6 +173,7 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
     ) external whenNotPaused nonReentrant {
         SavingPlan memory plan = savingPlans[planId];
 
+        if (planId <= 0 || planId >= nextPlanId) revert InvalidPlanId();
         if (!plan.enabled) revert NotEnabledPlan();
         if (depositAmount < plan.minDeposit) revert InvalidAmount();
         if (plan.maxDeposit > 0 && depositAmount > plan.maxDeposit)

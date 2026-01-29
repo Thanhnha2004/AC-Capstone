@@ -14,18 +14,11 @@ describe("LiquidityVault", function () {
     addr2: SignerWithAddress,
     addr3: SignerWithAddress,
     addr4: SignerWithAddress,
-    addr5: SignerWithAddress,
-    addr6: SignerWithAddress,
-    addr7: SignerWithAddress,
-    addr8: SignerWithAddress,
-    addr9: SignerWithAddress;
+    addr5: SignerWithAddress;
 
   let vault: LiquidityVault;
   let token: ERC20Mock;
   let savingBank: SavingBank;
-
-  const SECONDS_PER_YEAR = 365 * 86400;
-  const BASIS_POINTS = 10000;
 
   const deploy = async () => {
     [
@@ -39,23 +32,19 @@ describe("LiquidityVault", function () {
       addr3,
       addr4,
       addr5,
-      addr6,
-      addr7,
-      addr8,
-      addr9,
     ] = await ethers.getSigners();
 
-    // Deploy Mock ERC20 Tokens
+    // Deploy Mock ERC20 Token
     const ERC20MockFactory = await ethers.getContractFactory("ERC20Mock");
     token = await ERC20MockFactory.deploy();
     await token.waitForDeployment();
 
-    // deploy LiquidityVault contract
+    // Deploy LiquidityVault contract
     const VaultFactory = await ethers.getContractFactory("LiquidityVault");
     vault = await VaultFactory.deploy(await token.getAddress());
     await vault.waitForDeployment();
 
-    // deploy SavingBank contract
+    // Deploy SavingBank contract
     const SavingBankFactory = await ethers.getContractFactory("SavingBank");
     savingBank = await SavingBankFactory.deploy(
       await token.getAddress(),
@@ -67,13 +56,13 @@ describe("LiquidityVault", function () {
     // Set savingBank in vault
     await vault.setSavingBank(await savingBank.getAddress());
 
-    // Mint tokens cho users
-    await token.mint(deployer.address, ethers.parseEther("10000"));
+    // Mint tokens to users
+    await token.mint(deployer.address, ethers.parseEther("100000"));
     await token.mint(addr1.address, ethers.parseEther("10000"));
     await token.mint(addr2.address, ethers.parseEther("10000"));
     await token.mint(addr3.address, ethers.parseEther("10000"));
 
-    // Approve vault để transfer tokens
+    // Approve vault to transfer tokens
     await token
       .connect(deployer)
       .approve(await vault.getAddress(), ethers.MaxUint256);
@@ -95,7 +84,7 @@ describe("LiquidityVault", function () {
     // Impersonate savingBank address
     await ethers.provider.send("hardhat_impersonateAccount", [savingBankAddress]);
     
-    // Set balance directly using hardhat_setBalance instead of sending ETH
+    // Set balance for gas fees
     await ethers.provider.send("hardhat_setBalance", [
       savingBankAddress,
       ethers.toQuantity(ethers.parseEther("100"))
@@ -105,19 +94,11 @@ describe("LiquidityVault", function () {
     return signer;
   };
 
-  const fundVault = async (amount: bigint) => {
-    await vault.fundVault(amount);
-  };
-
-  const pause = async () => {
-    await vault.pause();
-  };
-
   beforeEach(async () => {
     await deploy();
   });
 
-  describe("Deploy", function () {
+  describe("Deployment", function () {
     it("Should revert if token address is zero", async () => {
       const VaultFactory = await ethers.getContractFactory("LiquidityVault");
 
@@ -218,11 +199,22 @@ describe("LiquidityVault", function () {
 
       expect(await vault.totalBalance()).to.equal(ethers.parseEther("150"));
     });
+
+    it("Should update totalBalance correctly", async () => {
+      const amount1 = ethers.parseEther("500");
+      const amount2 = ethers.parseEther("300");
+      
+      await vault.fundVault(amount1);
+      expect(await vault.totalBalance()).to.equal(amount1);
+      
+      await vault.fundVault(amount2);
+      expect(await vault.totalBalance()).to.equal(amount1 + amount2);
+    });
   });
 
   describe("withdrawVault", function () {
     beforeEach(async () => {
-      await fundVault(ethers.parseEther("1000"));
+      await vault.fundVault(ethers.parseEther("1000"));
     });
 
     it("Should revert if not owner", async () => {
@@ -245,36 +237,44 @@ describe("LiquidityVault", function () {
     });
 
     it("Should withdraw successfully", async () => {
-      const amount = ethers.parseEther("100");
-      const balanceBefore = await vault.totalBalance();
+      const amount = ethers.parseEther("500");
+      const vaultBalanceBefore = await vault.totalBalance();
       const ownerBalanceBefore = await token.balanceOf(deployer.address);
 
       await vault.withdrawVault(amount);
 
-      const balanceAfter = await vault.totalBalance();
+      const vaultBalanceAfter = await vault.totalBalance();
       const ownerBalanceAfter = await token.balanceOf(deployer.address);
 
-      expect(balanceAfter).to.equal(balanceBefore - amount);
+      expect(vaultBalanceAfter).to.equal(vaultBalanceBefore - amount);
       expect(ownerBalanceAfter).to.equal(ownerBalanceBefore + amount);
     });
 
     it("Should emit Withdrawn event", async () => {
-      const amount = ethers.parseEther("100");
+      const amount = ethers.parseEther("500");
       await expect(vault.withdrawVault(amount))
         .to.emit(vault, "Withdrawn")
         .withArgs(deployer.address, amount);
     });
 
-    it("Should allow withdrawing all balance", async () => {
+    it("Should allow multiple withdrawals", async () => {
+      await vault.withdrawVault(ethers.parseEther("200"));
+      await vault.withdrawVault(ethers.parseEther("300"));
+      
+      expect(await vault.totalBalance()).to.equal(ethers.parseEther("500"));
+    });
+
+    it("Should withdraw all balance", async () => {
       const totalBalance = await vault.totalBalance();
       await vault.withdrawVault(totalBalance);
+      
       expect(await vault.totalBalance()).to.equal(0);
     });
   });
 
   describe("payInterest", function () {
     beforeEach(async () => {
-      await fundVault(ethers.parseEther("1000"));
+      await vault.fundVault(ethers.parseEther("1000"));
     });
 
     it("Should revert if not saving bank", async () => {
@@ -337,18 +337,28 @@ describe("LiquidityVault", function () {
 
     it("Should revert when paused", async () => {
       const savingBankSigner = await getSavingBankSigner();
-      await pause();
+      await vault.pause();
       await expect(
         vault
           .connect(savingBankSigner)
           .payInterest(addr1.address, ethers.parseEther("10")),
       ).to.be.revertedWithCustomError(vault, "EnforcedPause");
     });
+
+    it("Should pay interest to multiple users", async () => {
+      const savingBankSigner = await getSavingBankSigner();
+      const amount = ethers.parseEther("100");
+      
+      await vault.connect(savingBankSigner).payInterest(addr1.address, amount);
+      await vault.connect(savingBankSigner).payInterest(addr2.address, amount);
+      
+      expect(await vault.totalBalance()).to.equal(ethers.parseEther("800"));
+    });
   });
 
   describe("deductInterest", function () {
     beforeEach(async () => {
-      await fundVault(ethers.parseEther("1000"));
+      await vault.fundVault(ethers.parseEther("1000"));
     });
 
     it("Should revert if not saving bank", async () => {
@@ -398,7 +408,7 @@ describe("LiquidityVault", function () {
       const userBalanceAfter = await token.balanceOf(addr1.address);
 
       expect(vaultBalanceAfter).to.equal(vaultBalanceBefore - amount);
-      expect(userBalanceAfter).to.equal(userBalanceBefore); // No transfer
+      expect(userBalanceAfter).to.equal(userBalanceBefore); 
     });
 
     it("Should emit InterestRenewed event", async () => {
@@ -413,18 +423,43 @@ describe("LiquidityVault", function () {
 
     it("Should revert when paused", async () => {
       const savingBankSigner = await getSavingBankSigner();
-      await pause();
+      await vault.pause();
       await expect(
         vault
           .connect(savingBankSigner)
           .deductInterest(addr1.address, ethers.parseEther("10")),
       ).to.be.revertedWithCustomError(vault, "EnforcedPause");
     });
+
+    it("Should deduct interest multiple times", async () => {
+      const savingBankSigner = await getSavingBankSigner();
+      const amount = ethers.parseEther("100");
+      
+      await vault.connect(savingBankSigner).deductInterest(addr1.address, amount);
+      await vault.connect(savingBankSigner).deductInterest(addr2.address, amount);
+      
+      expect(await vault.totalBalance()).to.equal(ethers.parseEther("800"));
+    });
+
+    it("Should not transfer tokens to user", async () => {
+      const savingBankSigner = await getSavingBankSigner();
+      const amount = ethers.parseEther("100");
+      const userBalanceBefore = await token.balanceOf(addr1.address);
+      const vaultTokenBalanceBefore = await token.balanceOf(await vault.getAddress());
+      
+      await vault.connect(savingBankSigner).deductInterest(addr1.address, amount);
+      
+      const userBalanceAfter = await token.balanceOf(addr1.address);
+      const vaultTokenBalanceAfter = await token.balanceOf(await vault.getAddress());
+      
+      expect(userBalanceAfter).to.equal(userBalanceBefore);
+      expect(vaultTokenBalanceAfter).to.equal(vaultTokenBalanceBefore);
+    });
   });
 
   describe("Pause and Unpause", function () {
     beforeEach(async () => {
-      await fundVault(ethers.parseEther("1000"));
+      await vault.fundVault(ethers.parseEther("1000"));
     });
 
     it("Should revert if non-owner tries to pause", async () => {
@@ -435,7 +470,7 @@ describe("LiquidityVault", function () {
     });
 
     it("Should revert if non-owner tries to unpause", async () => {
-      await pause();
+      await vault.pause();
       await expect(
         vault.connect(addr1).unpause(),
       ).to.be.revertedWithCustomError(vault, "OwnableUnauthorizedAccount");
@@ -496,33 +531,39 @@ describe("LiquidityVault", function () {
           .payInterest(addr1.address, ethers.parseEther("10")),
       ).to.not.be.reverted;
     });
+
+    it("Should allow admin functions when paused", async () => {
+      await vault.pause();
+      await expect(vault.fundVault(ethers.parseEther("100"))).to.not.be.reverted;
+      await expect(vault.withdrawVault(ethers.parseEther("100"))).to.not.be.reverted;
+    });
   });
 
   describe("View Functions", function () {
     it("Should return correct total balance", async () => {
       expect(await vault.totalBalance()).to.equal(0);
 
-      await fundVault(ethers.parseEther("500"));
+      await vault.fundVault(ethers.parseEther("500"));
       expect(await vault.totalBalance()).to.equal(ethers.parseEther("500"));
     });
 
     it("Should return correct actual balance", async () => {
-      await fundVault(ethers.parseEther("500"));
+      await vault.fundVault(ethers.parseEther("500"));
       expect(await vault.getActualBalance()).to.equal(ethers.parseEther("500"));
       expect(await vault.getActualBalance()).to.equal(
         await token.balanceOf(await vault.getAddress()),
       );
     });
 
-    it("Should return correct balance", async () => {
-      await fundVault(ethers.parseEther("500"));
+    it("Should return correct balance via getBalance", async () => {
+      await vault.fundVault(ethers.parseEther("500"));
       expect(await vault.getBalance()).to.equal(ethers.parseEther("500"));
       expect(await vault.getBalance()).to.equal(await vault.totalBalance());
     });
 
     it("Should track balance changes correctly", async () => {
       const savingBankSigner = await getSavingBankSigner();
-      await fundVault(ethers.parseEther("1000"));
+      await vault.fundVault(ethers.parseEther("1000"));
       expect(await vault.totalBalance()).to.equal(ethers.parseEther("1000"));
 
       await vault
@@ -532,6 +573,17 @@ describe("LiquidityVault", function () {
 
       await vault.withdrawVault(ethers.parseEther("200"));
       expect(await vault.totalBalance()).to.equal(ethers.parseEther("700"));
+    });
+
+    it("Should track balance after deductInterest", async () => {
+      const savingBankSigner = await getSavingBankSigner();
+      await vault.fundVault(ethers.parseEther("1000"));
+      
+      await vault
+        .connect(savingBankSigner)
+        .deductInterest(addr1.address, ethers.parseEther("100"));
+      
+      expect(await vault.totalBalance()).to.equal(ethers.parseEther("900"));
     });
   });
 });

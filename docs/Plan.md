@@ -212,9 +212,11 @@ Kế hoạch 6 ngày hoàn chỉnh từ zero đến finished, chia đều công 
 **3. Constants & State Variables (30 phút)**
 
 - [✅] Define enum:
+
   - [✅] `DepositStatus = {Active, Withdrawn, EarlyWithdrawn, Renewed}`
 
 - [✅] Define constants:
+
   - [✅] `uint256 private constant SECONDS_PER_YEAR = 365 days`
   - [✅] `uint256 private constant BASIS_POINTS = 10000`
 
@@ -526,7 +528,6 @@ Kế hoạch 6 ngày hoàn chỉnh từ zero đến finished, chia đều công 
 
 **3. View Functions (30 phút)**
 
-
 - [✅] Implement `getUserDepositIds(address user) external view returns (uint256[])`:
 
   - [✅] Return userDepositIds[user]
@@ -625,140 +626,127 @@ Kế hoạch 6 ngày hoàn chỉnh từ zero đến finished, chia đều công 
 
 **1. Test Plan Management (1 giờ)**
 
-- [ ] Tạo `test/SavingBank.Plan.test.ts`:
-
 **createPlan Tests:**
 
-- [ ] Should create plan successfully
-- [ ] Should increment nextPlanId
-- [ ] Should set enabled = true
-- [ ] Should emit PlanCreated event
-- [ ] Should revert if tenorDays is zero
-- [ ] Should revert if aprBps is zero
-- [ ] Should revert if minDeposit is zero
-- [ ] Should revert if maxDeposit < minDeposit
-- [ ] Should revert if earlyWithdrawPenaltyBps is zero
-- [ ] Should revert if earlyWithdrawPenaltyBps > 10000
-- [ ] Should revert if not owner
+- [✅] Should create plan successfully
+- [✅] Should increment nextPlanId
+- [✅] Should set enabled = true
+- [✅] Should emit PlanCreated event
+- [✅] Should revert if tenorDays is zero
+- [✅] Should revert if aprBps is zero
+- [✅] Should revert if minDeposit is zero
+- [✅] Should revert if maxDeposit < minDeposit
+- [✅] Should revert if earlyWithdrawPenaltyBps is zero
+- [✅] Should revert if earlyWithdrawPenaltyBps > 10000
+- [✅] Should revert if not owner
 
 **updatePlanStatus Tests:**
 
-- [ ] Should update plan status
-- [ ] Should emit PlanUpdated event
-- [ ] Should revert if invalid planId
-- [ ] Should revert if not owner
+- [✅] Should update plan status
+- [✅] Should emit PlanUpdated event
+- [✅] Should revert if invalid planId
+- [✅] Should revert if not owner
 
 **updatePlan Tests:**
 
-- [ ] Should update all plan fields
-- [ ] Should emit PlanUpdated event
-- [ ] Should revert with invalid parameters
-- [ ] Should revert if not owner
+- [✅] Should update all plan fields
+- [✅] Should emit PlanUpdated event
+- [✅] Should revert with invalid parameters
+- [✅] Should revert if not owner
 
 **Admin Functions Tests:**
 
-- [ ] setVault should work
-- [ ] setFeeReceiver should work
-- [ ] pause/unpause should work
+- [✅] setVault should work
+- [✅] setFeeReceiver should work
+- [✅] pause/unpause should work
 
 **2. Test openDepositCertificate (1 giờ)**
 
-- [ ] Tạo `test/SavingBank.Deposit.test.ts`:
-
 **Happy Path Tests:**
 
-- [ ] Should open deposit successfully
-- [ ] Should transfer tokens from user to contract
-- [ ] Should mint NFT to user
-- [ ] Should increment nextDepositId
-- [ ] Should add to userDepositIds
-- [ ] Should emit DepositCertificateOpened event
-- [ ] Should save correct deposit data
-- [ ] Should calculate correct maturity
-- [ ] Should snapshot plan data correctly
+- [✅] Should open deposit successfully
+- [✅] Should transfer tokens from user to contract
+- [✅] Should mint NFT to user
+- [✅] Should increment nextDepositId
+- [✅] Should add to userDepositIds
+- [✅] Should emit DepositCertificateOpened event
+- [✅] Should save correct deposit data
+- [✅] Should calculate correct maturity
+- [✅] Should snapshot plan data correctly
 
 **Validation Tests:**
 
-- [ ] Should revert if plan disabled
-- [ ] Should revert if amount < minDeposit
-- [ ] Should revert if amount > maxDeposit
-- [ ] Should revert if contract paused
-- [ ] Should revert if insufficient balance
-- [ ] Should revert if insufficient allowance
+- [✅] Should revert if plan disabled
+- [✅] Should revert if amount < minDeposit
+- [✅] Should revert if amount > maxDeposit
+- [✅] Should revert if contract paused
+- [✅] Should revert if insufficient balance
+- [✅] Should revert if insufficient allowance
 
 **Multiple Deposits Tests:**
 
-- [ ] Should allow multiple deposits from same user
-- [ ] Should allow deposits from different users
-- [ ] Each deposit should have unique NFT
+- [✅] Should allow multiple deposits from same user
+- [✅] Should allow deposits from different users
+- [✅] Each deposit should have unique NFT
 
 ### 🌙 Chiều (2-3 giờ)
 
 **3. Test withdraw (1.5 giờ)**
 
-- [ ] Tạo `test/SavingBank.Withdraw.test.ts`:
-
 **Happy Path Tests:**
 
-- [ ] Should withdraw successfully at maturity
-- [ ] Should transfer principal to user
-- [ ] Should call vault.payInterest with correct amount
-- [ ] Should burn NFT
-- [ ] Should set status to false
-- [ ] Should emit Withdrawn event
+- [✅] Should withdraw successfully at maturity
+- [✅] Should transfer principal to user
+- [✅] Should call vault.payInterest with correct amount
+- [✅] Should burn NFT
+- [✅] Should set status to false
+- [✅] Should emit Withdrawn event
 
 **Interest Calculation Tests:**
 
-- [ ] Should calculate correct interest for 7-day plan
-- [ ] Should calculate correct interest for 30-day plan
-- [ ] Should calculate correct interest for 90-day plan
-- [ ] Should calculate correct interest with different APRs
-- [ ] Should calculate correct interest with different principals
+- [✅] Should calculate correct interest for 7-day plan
+- [✅] Should calculate correct interest for 30-day plan
+- [✅] Should calculate correct interest for 90-day plan
+- [✅] Should calculate correct interest with different APRs
+- [✅] Should calculate correct interest with different principals
 
 **Error Tests:**
 
-- [ ] Should revert if not matured yet
-- [ ] Should revert if not owner
-- [ ] Should revert if deposit inactive
-- [ ] Should revert if reentrancy attack
+- [✅] Should revert if not matured yet
+- [✅] Should revert if not owner
+- [✅] Should revert if deposit inactive
+- [✅] Should revert if reentrancy attack
 
 **Integration Tests:**
 
-- [ ] Should decrease vault balance correctly
-- [ ] Should work when vault has exact amount
-- [ ] Should revert if vault insufficient balance
+- [✅] Should decrease vault balance correctly
+- [✅] Should work when vault has exact amount
+- [✅] Should revert if vault insufficient balance
 
 **4. Test earlyWithdraw (1 giờ)**
 
-- [ ] Tạo `test/SavingBank.EarlyWithdraw.test.ts`:
-
 **Happy Path Tests:**
 
-- [ ] Should early withdraw successfully
-- [ ] Should calculate correct penalty
-- [ ] Should transfer (principal - penalty) to user
-- [ ] Should transfer penalty to feeReceiver
-- [ ] Should burn NFT
-- [ ] Should set status to false
-- [ ] Should emit EarlyWithdrawn event
+- [✅] Should early withdraw successfully
+- [✅] Should calculate correct penalty
+- [✅] Should transfer (principal - penalty) to user
+- [✅] Should transfer penalty to feeReceiver
+- [✅] Should burn NFT
+- [✅] Should set status to false
+- [✅] Should emit EarlyWithdrawn event
 
 **Penalty Calculation Tests:**
 
-- [ ] Should calculate correct penalty with 5% rate
-- [ ] Should calculate correct penalty with 10% rate
-- [ ] Should calculate correct penalty with different principals
+- [✅] Should calculate correct penalty with 5% rate
+- [✅] Should calculate correct penalty with 10% rate
+- [✅] Should calculate correct penalty with different principals
 
 **Error Tests:**
 
-- [ ] Should revert if already matured
-- [ ] Should revert if not owner
-- [ ] Should revert if deposit inactive
-- [ ] Should revert if contract paused
-
-**Edge Cases:**
-
-- [ ] Should work 1 second after opening
-- [ ] Should work 1 second before maturity
+- [✅] Should revert if already matured
+- [✅] Should revert if not owner
+- [✅] Should revert if deposit inactive
+- [✅] Should revert if contract paused
 
 **Deliverable Ngày 5:**
 
@@ -774,8 +762,6 @@ Kế hoạch 6 ngày hoàn chỉnh từ zero đến finished, chia đều công 
 ### ☀️ Sáng (2 giờ)
 
 **1. Complete Renew Tests (1 giờ)**
-
-- [ ] Tạo `test/SavingBank.Renew.test.ts`:
 
 **renewWithSamePlan Tests:**
 
@@ -984,18 +970,14 @@ Kế hoạch 6 ngày hoàn chỉnh từ zero đến finished, chia đều công 
 
 ## 📊 Test Count Goals
 
-| Test Suite                       | Estimated Tests | Priority |
-| -------------------------------- | --------------- | -------- |
-| LiquidityVault.test.ts           | ~40 tests       | High     |
-| SavingBank.Plan.test.ts          | ~20 tests       | High     |
-| SavingBank.Deposit.test.ts       | ~15 tests       | High     |
-| SavingBank.Withdraw.test.ts      | ~25 tests       | Critical |
-| SavingBank.EarlyWithdraw.test.ts | ~15 tests       | High     |
-| SavingBank.Renew.test.ts         | ~25 tests       | High     |
-| Integration.test.ts              | ~10 tests       | High     |
-| EdgeCases.test.ts                | ~15 tests       | Medium   |
-| Security.test.ts                 | ~10 tests       | High     |
-| **TOTAL**                        | **~175 tests**  | -        |
+| Test Suite             | Estimated Tests | Priority |
+| ---------------------- | --------------- | -------- |
+| LiquidityVault.test.ts | ~40 tests       | High     |
+| SavingBank.test.ts     | ~25 tests       | High     |
+| Integration.test.ts    | ~10 tests       | High     |
+| EdgeCases.test.ts      | ~15 tests       | Medium   |
+| Security.test.ts       | ~10 tests       | High     |
+| **TOTAL**              | **~175 tests**  | -        |
 
 ---
 
