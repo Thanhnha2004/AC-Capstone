@@ -765,175 +765,175 @@ Kế hoạch 6 ngày hoàn chỉnh từ zero đến finished, chia đều công 
 
 **renewWithSamePlan Tests:**
 
-- [ ] Should renew successfully
-- [ ] Should calculate correct interest
-- [ ] Should create new deposit with principal + interest
-- [ ] Should call vault.deductInterest
-- [ ] Should burn old NFT
-- [ ] Should mint new NFT
-- [ ] Should set old deposit status = false
-- [ ] Should set renew field to newDepositId
-- [ ] Should emit Renewed + DepositCertificateOpened events
-- [ ] Should snapshot current plan data (might have changed)
+- [✅] Should renew successfully
+- [✅] Should calculate correct interest
+- [✅] Should create new deposit with principal + interest
+- [✅] Should call vault.deductInterest
+- [✅] Should burn old NFT
+- [✅] Should mint new NFT
+- [✅] Should set old deposit status = false
+- [✅] Should set renew field to newDepositId
+- [✅] Should emit Renewed + DepositCertificateOpened events
+- [✅] Should snapshot current plan data (might have changed)
 
 **Compound Interest Tests:**
 
-- [ ] Should compound interest after 1 renew
-- [ ] Should compound interest after 2 renews
-- [ ] Should compound interest after 3 renews
+- [✅] Should compound interest after 1 renew
+- [✅] Should compound interest after 2 renews
+- [✅] Should compound interest after 3 renews
 
 **renewWithNewPlan Tests:**
 
-- [ ] Should renew to different plan successfully
-- [ ] Should snapshot new plan data
-- [ ] 7-day → 30-day plan should work
-- [ ] 180-day → 7-day plan should work
-- [ ] Low APR → High APR should work
+- [✅] Should renew to different plan successfully
+- [✅] Should snapshot new plan data
+- [✅] 7-day → 30-day plan should work
+- [✅] 180-day → 7-day plan should work
+- [✅] Low APR → High APR should work
 
 **Error Tests:**
 
-- [ ] Should revert if not matured
-- [ ] Should revert if not owner
-- [ ] Should revert if plan disabled
-- [ ] Should revert if deposit inactive
+- [✅] Should revert if not matured
+- [✅] Should revert if not owner
+- [✅] Should revert if plan disabled
+- [✅] Should revert if deposit inactive
 
 **View Functions Tests:**
 
-- [ ] getCalculateInterest should return correct amount
-- [ ] getUserDepositIds should return all user deposits
-- [ ] getDepositInfo should return correct data
+- [✅] getCalculateInterest should return correct amount
+- [✅] getUserDepositIds should return all user deposits
+- [✅] getDepositInfo should return correct data
 
 **2. Integration Tests (1 giờ)**
 
-- [ ] Tạo `test/Integration.test.ts`:
+- [✅] Tạo `test/Integration.test.ts`:
 
 **Flow 1: Open → Withdraw**
 
-- [ ] User opens deposit
-- [ ] Time travel to maturity
-- [ ] User withdraws successfully
-- [ ] Verify token flow
-- [ ] Verify vault balance changes
-- [ ] Verify NFT lifecycle
+- [✅] User opens deposit
+- [✅] Time travel to maturity
+- [✅] User withdraws successfully
+- [✅] Verify token flow
+- [✅] Verify vault balance changes
+- [✅] Verify NFT lifecycle
 
 **Flow 2: Open → Early Withdraw**
 
-- [ ] User opens deposit
-- [ ] User early withdraws
-- [ ] Verify penalty distribution
+- [✅] User opens deposit
+- [✅] User early withdraws
+- [✅] Verify penalty distribution
 
 **Flow 3: Open → Renew → Withdraw**
 
-- [ ] User opens deposit
-- [ ] Time travel to maturity
-- [ ] User renews
-- [ ] Time travel to new maturity
-- [ ] User withdraws
-- [ ] Verify compound interest
+- [✅] User opens deposit
+- [✅] Time travel to maturity
+- [✅] User renews
+- [✅] Time travel to new maturity
+- [✅] User withdraws
+- [✅] Verify compound interest
 
 **Flow 4: Open → Renew New Plan → Withdraw**
 
-- [ ] User opens with plan 1
-- [ ] Renew to plan 2
-- [ ] Withdraw
-- [ ] Verify different interest rates
+- [✅] User opens with plan 1
+- [✅] Renew to plan 2
+- [✅] Withdraw
+- [✅] Verify different interest rates
 
 **Flow 5: Multiple Users Scenario**
 
-- [ ] 3 users open deposits
-- [ ] Some withdraw early
-- [ ] Some withdraw at maturity
-- [ ] Some renew
-- [ ] Verify isolation between users
-- [ ] Verify vault balance tracking
+- [✅] 3 users open deposits
+- [✅] Some withdraw early
+- [✅] Some withdraw at maturity
+- [✅] Some renew
+- [✅] Verify isolation between users
+- [✅] Verify vault balance tracking
 
 ### 🌙 Chiều (2-3 giờ)
 
 **3. Edge Cases Tests (1 giờ)**
 
-- [ ] Tạo `test/EdgeCases.test.ts`:
+- [✅] Tạo `test/EdgeCases.test.ts`:
 
 **Amount Edge Cases:**
 
-- [ ] Deposit 1 wei
-- [ ] Deposit very large amount (1M tokens)
-- [ ] Withdraw with 0 interest (very short tenor)
+- [✅] Deposit 1 wei
+- [✅] Deposit very large amount (1M tokens)
+- [✅] Withdraw with 0 interest (very short tenor)
 
 **Time Edge Cases:**
 
-- [ ] Withdraw exactly at maturity timestamp
-- [ ] Withdraw 1 second before maturity (should fail)
-- [ ] Withdraw 1 second after maturity (should work)
+- [✅] Withdraw exactly at maturity timestamp
+- [✅] Withdraw 1 second before maturity (should fail)
+- [✅] Withdraw 1 second after maturity (should work)
 
 **Vault Liquidity Edge Cases:**
 
-- [ ] Vault insufficient for interest payment
-- [ ] Multiple users withdraw, vault depleted
-- [ ] Vault empty scenario
+- [✅] Vault insufficient for interest payment
+- [✅] Multiple users withdraw, vault depleted
+- [✅] Vault empty scenario
 
 **Plan Update Edge Cases:**
 
-- [ ] Update plan after deposits opened (shouldn't affect old deposits)
-- [ ] Disable plan after deposits opened (old deposits should work)
-- [ ] Renew uses updated plan data
+- [✅] Update plan after deposits opened (shouldn't affect old deposits)
+- [✅] Disable plan after deposits opened (old deposits should work)
+- [✅] Renew uses updated plan data
 
 **Rounding Edge Cases (18 decimals):**
 
-- [ ] Very small principal + short tenor = minimal interest
-- [ ] Verify no precision loss
+- [✅] Very small principal + short tenor = minimal interest
+- [✅] Verify no precision loss
 
 **4. Security Tests (30 phút)**
 
-- [ ] Tạo `test/Security.test.ts`:
+- [✅] Tạo `test/Security.test.ts`:
 
 **Reentrancy Tests:**
 
-- [ ] Verify ReentrancyGuard on withdraw
-- [ ] Verify ReentrancyGuard on earlyWithdraw
-- [ ] Verify ReentrancyGuard on renew
-- [ ] Attempt reentrancy attack (should fail)
+- [✅] Verify ReentrancyGuard on withdraw
+- [✅] Verify ReentrancyGuard on earlyWithdraw
+- [✅] Verify ReentrancyGuard on renew
+- [✅] Attempt reentrancy attack (should fail)
 
 **Access Control Tests:**
 
-- [ ] Non-owner cannot call admin functions
-- [ ] Non-owner cannot withdraw others' deposits
-- [ ] Non-savingBank cannot call vault functions
+- [✅] Non-owner cannot call admin functions
+- [✅] Non-owner cannot withdraw others' deposits
+- [✅] Non-savingBank cannot call vault functions
 
 **Pause Tests:**
 
-- [ ] Pause should block user operations
-- [ ] Unpause should resume operations
-- [ ] Admin can still pause/unpause when paused
+- [✅] Pause should block user operations
+- [✅] Unpause should resume operations
+- [✅] Admin can still pause/unpause when paused
 
 **5. Final Review & Cleanup (1-1.5 giờ)**
 
 **Run Full Test Suite:**
 
-- [ ] `npx hardhat test`
-- [ ] All tests should pass
-- [ ] No warnings or errors
+- [✅] `npx hardhat test`
+- [✅] All tests should pass
+- [✅] No warnings or errors
 
 **Run Slither:**
 
-- [ ] `slither .`
-- [ ] Review all warnings
-- [ ] Fix critical/high issues
-- [ ] Document medium/low issues
+- [✅] `slither .`
+- [✅] Review all warnings
+- [✅] Fix critical/high issues
+- [✅] Document medium/low issues
 
 **Code Cleanup:**
 
-- [ ] Remove all `console.log` statements
-- [ ] Remove commented-out code
-- [ ] Clean up unused imports
-- [ ] Verify all NatSpec comments complete
-- [ ] Check event emissions
+- [✅] Remove all `console.log` statements
+- [✅] Remove commented-out code
+- [✅] Clean up unused imports
+- [✅] Verify all NatSpec comments complete
+- [✅] Check event emissions
 
 **Gas Optimization (if time permits):**
 
-- [ ] `REPORT_GAS=true npx hardhat test`
-- [ ] Review gas costs
-- [ ] Optimize storage packing
-- [ ] Minimize storage reads
+- [✅] `REPORT_GAS=true npx hardhat test`
+- [✅] Review gas costs
+- [✅] Optimize storage packing
+- [✅] Minimize storage reads
 
 **Final Checklist:**
 
@@ -965,19 +965,6 @@ Kế hoạch 6 ngày hoàn chỉnh từ zero đến finished, chia đều công 
 | 4    | Renew functions + View functions         | Complete Vault Testing           | All functions + Vault tests |
 | 5    | Plan + Deposit tests                     | Withdraw + EarlyWithdraw tests   | Core functions tested       |
 | 6    | Renew tests + Integration                | Edge cases + Security + Review   | Complete & ready            |
-
----
-
-## 📊 Test Count Goals
-
-| Test Suite             | Estimated Tests | Priority |
-| ---------------------- | --------------- | -------- |
-| LiquidityVault.test.ts | ~40 tests       | High     |
-| SavingBank.test.ts     | ~25 tests       | High     |
-| Integration.test.ts    | ~10 tests       | High     |
-| EdgeCases.test.ts      | ~15 tests       | Medium   |
-| Security.test.ts       | ~10 tests       | High     |
-| **TOTAL**              | **~175 tests**  | -        |
 
 ---
 

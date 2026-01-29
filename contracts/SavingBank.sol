@@ -309,7 +309,7 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
             snapshotEarlyWithdrawPenaltyBps: plan.earlyWithdrawPenaltyBps
         });
 
-        vault.deductInterest(user, interest);
+        vault.payInterest(address(this), interest); // Transfer interest to SavingBank for compound
 
         _burn(depositId);
         _safeMint(user, newId);
@@ -334,6 +334,8 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
         DepositCertificate storage oldDeposit = depositCertificates[depositId];
 
         if (msg.sender != oldDeposit.owner) revert NotOwner();
+        if (oldDeposit.status != DepositStatus.Active)
+            revert NotActiveDeposit();
         if (block.timestamp < oldDeposit.maturityAt) revert NotMaturedYet();
 
         SavingPlan memory plan = savingPlans[newPlanId];
@@ -352,7 +354,7 @@ contract SavingBank is ERC721, Ownable, Pausable, ReentrancyGuard {
         userDepositIds[user].push(newId);
         nextDepositId++;
 
-        vault.deductInterest(user, interest);
+        vault.payInterest(address(this), interest); // Transfer interest to SavingBank for compound
 
         depositCertificates[newId] = DepositCertificate({
             owner: user,
