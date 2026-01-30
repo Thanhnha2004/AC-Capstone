@@ -12,8 +12,6 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
-// This is a sample Hardhat task. To learn how to create your own go to
-// https://hardhat.org/guides/create-task.html
 task("accounts", "Prints the list of accounts", async (taskArgs, hre) => {
   const accounts = await hre.ethers.getSigners();
 
@@ -28,18 +26,19 @@ const {
 } = process.env;
 const reportGas = process.env.REPORT_GAS;
 
-// You need to export an object to set up your config
-// Go to https://hardhat.org/config/ to learn more
-
-/**
- * @type import('hardhat/config').HardhatUserConfig
- */
 module.exports = {
   networks: {
-    "sepolia": {
+    hardhat: {
+      chainId: 31337,
+    },
+    localhost: {
+      url: "http://127.0.0.1:8545",
+      chainId: 31337,
+    },
+    sepolia: {
       url: "https://eth-sepolia.g.alchemy.com/v2/YnyRV2BOccnDHMx83D3b9",
       chainId: 11155111,
-      accounts: [testnetPrivateKey],
+      accounts: testnetPrivateKey ? [testnetPrivateKey] : [],
       timeout: 40000,
     },
   },
@@ -52,9 +51,9 @@ module.exports = {
             enabled: true,
             runs: 1000,
           },
-          viaIR: true
+          viaIR: true,
         },
-      }
+      },
     ],
   },
   abiExporter: {
@@ -74,18 +73,20 @@ module.exports = {
     runOnCompile: true,
   },
   etherscan: {
-    apiKey: process.env.ETHERSCAN_API_KEY!
+    apiKey: process.env.ETHERSCAN_API_KEY!,
   },
   sourcify: {
-    // Disabled by default
-    // Doesn't need an API key
     enabled: false,
   },
   mocha: {
     timeout: 40000,
   },
   namedAccounts: {
-    deployer: 0,
+    deployer: {
+      default: 0, // ← SỬA: Thêm default
+      localhost: 0,
+      sepolia: 0,
+    },
   },
   typechain: {
     outDir: "typechain",

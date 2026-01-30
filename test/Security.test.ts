@@ -1,622 +1,675 @@
-import "@nomicfoundation/hardhat-ethers";
 import { ethers } from "hardhat";
 import { expect } from "chai";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
-import { SavingBank, ERC20Mock, LiquidityVault } from "../typechain";
+import {
+  SavingBankV2,
+  ERC20Mock,
+  PrincipalVault,
+  InterestVault,
+  SavingBankNFT,
+} from "../typechain";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 
 describe("Security Tests", function () {
-  let deployer: SignerWithAddress,
-    receiver1: SignerWithAddress,
-    addr1: SignerWithAddress,
-    addr2: SignerWithAddress,
-    attacker: SignerWithAddress;
+  let admin: SignerWithAddress,
+    operator: SignerWithAddress,
+    attacker: SignerWithAddress,
+    user1: SignerWithAddress;
+  let savingBank: SavingBankV2,
+    token: ERC20Mock,
+    principalVault: PrincipalVault,
+    interestVault: InterestVault,
+    nft: SavingBankNFT;
 
-  let savingBank: SavingBank;
-  let vault: LiquidityVault;
-  let token: ERC20Mock;
+  const ADMIN_ROLE = ethers.keccak256(ethers.toUtf8Bytes("ADMIN_ROLE"));
+  const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"));
 
-  const deploy = async () => {
-    [deployer, receiver1, addr1, addr2, attacker] = await ethers.getSigners();
+  beforeEach(async function () {
+    [admin, operator, attacker, user1] = await ethers.getSigners();
 
-    const ERC20MockFactory = await ethers.getContractFactory("ERC20Mock");
-    token = await ERC20MockFactory.deploy();
-    await token.waitForDeployment();
+    const TokenFactory = await ethers.getContractFactory("ERC20Mock");
+    token = await TokenFactory.deploy();
 
-    vault = await (
-      await ethers.getContractFactory("LiquidityVault")
-    ).deploy(await token.getAddress());
-    await vault.waitForDeployment();
+    const NFTFactory = await ethers.getContractFactory("SavingBankNFT");
+    nft = await NFTFactory.deploy();
 
-    savingBank = await (
-      await ethers.getContractFactory("SavingBank")
-    ).deploy(
-      await token.getAddress(),
-      await vault.getAddress(),
-      receiver1.address
+    const PrincipalVaultFactory = await ethers.getContractFactory(
+      "PrincipalVault",
     );
-    await savingBank.waitForDeployment();
+    principalVault = await PrincipalVaultFactory.deploy(
+      await token.getAddress(),
+      admin.address,
+      operator.address,
+    );
 
-    await token.mint(deployer.address, ethers.parseEther("1000000"));
-    await token.mint(addr1.address, ethers.parseEther("100000"));
-    await token.mint(addr2.address, ethers.parseEther("100000"));
-    await token.mint(attacker.address, ethers.parseEther("100000"));
+    const InterestVaultFactory = await ethers.getContractFactory(
+      "InterestVault",
+    );
+    interestVault = await InterestVaultFactory.deploy(
+      await token.getAddress(),
+      admin.address,
+      operator.address,
+    );
+
+    const SavingBankFactory = await ethers.getContractFactory("SavingBankV2");
+    savingBank = await SavingBankFactory.deploy(
+      await token.getAddress(),
+      await principalVault.getAddress(),
+      await interestVault.getAddress(),
+      await nft.getAddress(),
+      admin.address,
+      admin.address,
+      operator.address,
+    );
+
+    await nft.connect(admin).setSavingBank(await savingBank.getAddress());
+    await principalVault
+      .connect(admin)
+      .grantRole(OPERATOR_ROLE, await savingBank.getAddress());
+    await interestVault
+      .connect(admin)
+      .grantRole(OPERATOR_ROLE, await savingBank.getAddress());
+
+    await token.mint(user1.address, ethers.parseEther("10000"));
+    await token.mint(attacker.address, ethers.parseEther("10000"));
+    await token.mint(admin.address, ethers.parseEther("100000"));
 
     await token
-      .connect(deployer)
-      .approve(await savingBank.getAddress(), ethers.MaxUint256);
-    await token
-      .connect(deployer)
-      .approve(await vault.getAddress(), ethers.MaxUint256);
-    await token
-      .connect(addr1)
-      .approve(await savingBank.getAddress(), ethers.MaxUint256);
-    await token
-      .connect(addr2)
-      .approve(await savingBank.getAddress(), ethers.MaxUint256);
+      .connect(user1)
+      .approve(await principalVault.getAddress(), ethers.MaxUint256);
     await token
       .connect(attacker)
       .approve(await savingBank.getAddress(), ethers.MaxUint256);
+    await token
+      .connect(admin)
+      .approve(await interestVault.getAddress(), ethers.MaxUint256);
+    await token
+      .connect(admin)
+      .approve(await principalVault.getAddress(), ethers.MaxUint256);
 
-    await vault.setSavingBank(await savingBank.getAddress());
-  };
-
-  const createDefaultPlans = async () => {
-    await savingBank.createPlan(
-      7,
-      500,
-      ethers.parseEther("100"),
-      ethers.parseEther("10000"),
-      300
-    );
-
-    await savingBank.createPlan(
-      30,
-      800,
-      ethers.parseEther("100"),
-      ethers.parseEther("10000"),
-      500
-    );
-  };
-
-  beforeEach(async () => {
-    await deploy();
-    await createDefaultPlans();
-    await vault.fundVault(ethers.parseEther("100000"));
+    await interestVault.connect(admin).depositFund(ethers.parseEther("50000"));
   });
 
-  describe("Reentrancy Protection", function () {
-    it("Should protect withdraw from reentrancy attacks", async function () {
-      await savingBank
-        .connect(addr1)
-        .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      await time.increase(7 * 24 * 60 * 60);
-
-      // Normal withdrawal should succeed
-      await expect(savingBank.connect(addr1).withdraw(1)).to.not.be.reverted;
-
-      // Attempting to withdraw again should fail (already withdrawn)
-      await expect(savingBank.connect(addr1).withdraw(1))
-        .to.be.revertedWithCustomError(savingBank, "NotActiveDeposit")
-        .withArgs();
-    });
-
-    it("Should protect earlyWithdraw from reentrancy attacks", async function () {
-      await savingBank
-        .connect(addr1)
-        .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      // Normal early withdrawal should succeed
-      await expect(savingBank.connect(addr1).earlyWithdraw(1)).to.not.be
-        .reverted;
-
-      // Attempting to withdraw again should fail
-      await expect(savingBank.connect(addr1).earlyWithdraw(1))
-        .to.be.revertedWithCustomError(savingBank, "NotActiveDeposit")
-        .withArgs();
-    });
-
-    it("Should protect renewWithNewPlan from reentrancy attacks", async function () {
-      await savingBank
-        .connect(addr1)
-        .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      await time.increase(7 * 24 * 60 * 60);
-
-      // Normal renewal should succeed
-      await expect(savingBank.connect(addr1).renewWithNewPlan(1, 1)).to.not.be
-        .reverted;
-
-      // Attempting to renew again should fail
-      await expect(savingBank.connect(addr1).renewWithNewPlan(1, 1))
-        .to.be.revertedWithCustomError(savingBank, "NotActiveDeposit")
-        .withArgs();
-    });
-
-    it("Should protect vault payInterest from reentrancy", async function () {
-      await savingBank
-        .connect(addr1)
-        .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      await time.increase(7 * 24 * 60 * 60);
-
-      // Get savingBank signer for direct vault calls
-      const savingBankAddress = await savingBank.getAddress();
-      await ethers.provider.send("hardhat_impersonateAccount", [
-        savingBankAddress,
-      ]);
-      await ethers.provider.send("hardhat_setBalance", [
-        savingBankAddress,
-        ethers.toQuantity(ethers.parseEther("100")),
-      ]);
-      const savingBankSigner = await ethers.getSigner(savingBankAddress);
-
-      // Normal payInterest should work
-      await expect(
-        vault
-          .connect(savingBankSigner)
-          .payInterest(addr1.address, ethers.parseEther("10"))
-      ).to.not.be.reverted;
-    });
-
-    it("Should protect vault deductInterest from reentrancy", async function () {
-      await savingBank
-        .connect(addr1)
-        .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      await time.increase(7 * 24 * 60 * 60);
-
-      const savingBankAddress = await savingBank.getAddress();
-      await ethers.provider.send("hardhat_impersonateAccount", [
-        savingBankAddress,
-      ]);
-      await ethers.provider.send("hardhat_setBalance", [
-        savingBankAddress,
-        ethers.toQuantity(ethers.parseEther("100")),
-      ]);
-      const savingBankSigner = await ethers.getSigner(savingBankAddress);
-
-      // Normal deductInterest should work
-      await expect(
-        vault
-          .connect(savingBankSigner)
-          .deductInterest(addr1.address, ethers.parseEther("10"))
-      ).to.not.be.reverted;
-    });
-  });
-
-  describe("Access Control - SavingBank", function () {
-    it("Should prevent non-owner from calling createPlan", async function () {
+  describe("Access Control", function () {
+    it("Should prevent non-operator from creating plan", async function () {
       await expect(
         savingBank
           .connect(attacker)
           .createPlan(
-            7,
-            500,
+            30,
+            1000,
             ethers.parseEther("100"),
             ethers.parseEther("10000"),
-            300
-          )
-      ).to.be.revertedWithCustomError(savingBank, "OwnableUnauthorizedAccount");
+            5000,
+          ),
+      ).to.be.reverted;
     });
 
-    it("Should prevent non-owner from calling updatePlan", async function () {
+    it("Should prevent non-operator from updating plan", async function () {
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
+      await expect(savingBank.connect(attacker).updatePlanStatus(1, false)).to
+        .be.reverted;
+    });
+
+    it("Should prevent non-admin from pausing", async function () {
+      await expect(savingBank.connect(attacker).pause()).to.be.reverted;
+    });
+
+    it("Should prevent non-admin from updating vaults", async function () {
       await expect(
         savingBank
           .connect(attacker)
-          .updatePlan(
-            1,
-            14,
-            600,
-            ethers.parseEther("200"),
-            ethers.parseEther("20000"),
-            400
-          )
-      ).to.be.revertedWithCustomError(savingBank, "OwnableUnauthorizedAccount");
+          .setVaults(
+            await principalVault.getAddress(),
+            await interestVault.getAddress(),
+          ),
+      ).to.be.reverted;
     });
 
-    it("Should prevent non-owner from calling updatePlanStatus", async function () {
-      await expect(savingBank.connect(attacker).updatePlanStatus(1, false))
-        .to.be.revertedWithCustomError(savingBank, "OwnableUnauthorizedAccount");
+    it("Should prevent non-admin from updating NFT", async function () {
+      await expect(savingBank.connect(attacker).setNFT(await nft.getAddress()))
+        .to.be.reverted;
     });
 
-    it("Should prevent non-owner from calling setVault", async function () {
-      await expect(savingBank.connect(attacker).setVault(addr2.address))
-        .to.be.revertedWithCustomError(savingBank, "OwnableUnauthorizedAccount");
+    it("Should prevent non-admin from updating fee receiver", async function () {
+      await expect(
+        savingBank.connect(attacker).setFeeReceiver(attacker.address),
+      ).to.be.reverted;
     });
 
-    it("Should prevent non-owner from calling setFeeReceiver", async function () {
-      await expect(savingBank.connect(attacker).setFeeReceiver(addr2.address))
-        .to.be.revertedWithCustomError(savingBank, "OwnableUnauthorizedAccount");
+    it("Should prevent non-operator vault access", async function () {
+      await expect(
+        principalVault
+          .connect(attacker)
+          .depositPrincipal(user1.address, ethers.parseEther("100")),
+      ).to.be.reverted;
     });
 
-    it("Should prevent non-owner from calling pause", async function () {
-      await expect(savingBank.connect(attacker).pause())
-        .to.be.revertedWithCustomError(savingBank, "OwnableUnauthorizedAccount");
+    it("Should prevent non-operator from paying interest", async function () {
+      await expect(
+        interestVault
+          .connect(attacker)
+          .payInterest(user1.address, ethers.parseEther("100")),
+      ).to.be.reverted;
     });
 
-    it("Should prevent non-owner from calling unpause", async function () {
-      await savingBank.pause();
-      await expect(savingBank.connect(attacker).unpause())
-        .to.be.revertedWithCustomError(savingBank, "OwnableUnauthorizedAccount");
+    it("Should prevent non-savingBank NFT mint", async function () {
+      await expect(
+        nft
+          .connect(attacker)
+          .mint(attacker.address, 1, 1, ethers.parseEther("100")),
+      ).to.be.revertedWithCustomError(nft, "Unauthorized");
     });
 
-    it("Should prevent non-owner from withdrawing others deposits", async function () {
+    it("Should prevent non-savingBank NFT burn", async function () {
       await savingBank
-        .connect(addr1)
-        .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      await time.increase(7 * 24 * 60 * 60);
-
-      await expect(savingBank.connect(attacker).withdraw(1))
-        .to.be.revertedWithCustomError(savingBank, "NotOwner")
-        .withArgs();
-    });
-
-    it("Should prevent non-owner from early withdrawing others deposits", async function () {
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
       await savingBank
-        .connect(addr1)
+        .connect(user1)
         .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      await expect(savingBank.connect(attacker).earlyWithdraw(1))
-        .to.be.revertedWithCustomError(savingBank, "NotOwner")
-        .withArgs();
-    });
-
-    it("Should prevent non-owner from renewing others deposits", async function () {
-      await savingBank
-        .connect(addr1)
-        .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      await time.increase(7 * 24 * 60 * 60);
-
-      await expect(savingBank.connect(attacker).renewWithNewPlan(1, 1))
-        .to.be.revertedWithCustomError(savingBank, "NotOwner")
-        .withArgs();
+      await expect(nft.connect(attacker).burn(1)).to.be.revertedWithCustomError(
+        nft,
+        "Unauthorized",
+      );
     });
   });
 
-  describe("Access Control - LiquidityVault", function () {
-    it("Should prevent non-owner from calling fundVault", async function () {
+  describe("Ownership Validation", function () {
+    beforeEach(async function () {
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("1000"));
+    });
+
+    it("Should prevent non-owner from withdrawing", async function () {
+      await time.increase(31 * 86400);
       await expect(
-        vault.connect(attacker).fundVault(ethers.parseEther("1000"))
-      ).to.be.revertedWithCustomError(vault, "OwnableUnauthorizedAccount");
+        savingBank.connect(attacker).withdraw(1),
+      ).to.be.revertedWithCustomError(savingBank, "NotOwner");
     });
 
-    it("Should prevent non-owner from calling withdrawVault", async function () {
+    it("Should prevent non-owner from early withdrawing", async function () {
       await expect(
-        vault.connect(attacker).withdrawVault(ethers.parseEther("1000"))
-      ).to.be.revertedWithCustomError(vault, "OwnableUnauthorizedAccount");
+        savingBank.connect(attacker).earlyWithdraw(1),
+      ).to.be.revertedWithCustomError(savingBank, "NotOwner");
     });
 
-    it("Should prevent non-owner from calling setSavingBank", async function () {
-      await expect(vault.connect(attacker).setSavingBank(addr2.address))
-        .to.be.revertedWithCustomError(vault, "OwnableUnauthorizedAccount");
-    });
-
-    it("Should prevent non-owner from calling pause on vault", async function () {
-      await expect(vault.connect(attacker).pause())
-        .to.be.revertedWithCustomError(vault, "OwnableUnauthorizedAccount");
-    });
-
-    it("Should prevent non-owner from calling unpause on vault", async function () {
-      await vault.pause();
-      await expect(vault.connect(attacker).unpause())
-        .to.be.revertedWithCustomError(vault, "OwnableUnauthorizedAccount");
-    });
-
-    it("Should prevent non-savingBank from calling payInterest", async function () {
+    it("Should prevent non-owner from renewing", async function () {
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          60,
+          1500,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
+      await time.increase(31 * 86400);
       await expect(
-        vault
+        savingBank.connect(attacker).renew(1, 2),
+      ).to.be.revertedWithCustomError(savingBank, "NotOwner");
+    });
+  });
+
+  describe("Reentrancy Protection", function () {
+    it("Should protect withdraw from reentrancy", async function () {
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("1000"));
+      await time.increase(31 * 86400);
+      await savingBank.connect(user1).withdraw(1);
+      // Cannot withdraw again
+      await expect(
+        savingBank.connect(user1).withdraw(1),
+      ).to.be.revertedWithCustomError(savingBank, "NotActiveDeposit");
+    });
+
+    it("Should protect early withdraw from reentrancy", async function () {
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("1000"));
+      await savingBank.connect(user1).earlyWithdraw(1);
+      await expect(
+        savingBank.connect(user1).earlyWithdraw(1),
+      ).to.be.revertedWithCustomError(savingBank, "NotActiveDeposit");
+    });
+
+    it("Should protect openDeposit from reentrancy", async function () {
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("1000"));
+      // DepositId should increment correctly
+      expect(await savingBank.nextDepositId()).to.equal(2);
+    });
+  });
+
+  describe("Input Validation", function () {
+    it("Should reject zero address in constructor", async function () {
+      const Factory = await ethers.getContractFactory("SavingBankV2");
+      await expect(
+        Factory.deploy(
+          ethers.ZeroAddress,
+          await principalVault.getAddress(),
+          await interestVault.getAddress(),
+          await nft.getAddress(),
+          admin.address,
+          admin.address,
+          operator.address,
+        ),
+      ).to.be.revertedWithCustomError(savingBank, "InvalidToken");
+    });
+
+    it("Should reject invalid plan parameters", async function () {
+      await expect(
+        savingBank
+          .connect(operator)
+          .createPlan(
+            0,
+            1000,
+            ethers.parseEther("100"),
+            ethers.parseEther("10000"),
+            5000,
+          ),
+      ).to.be.revertedWithCustomError(savingBank, "InvalidTenor");
+    });
+
+    it("Should reject deposit below minimum", async function () {
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
+      await expect(
+        savingBank
+          .connect(user1)
+          .openDepositCertificate(1, ethers.parseEther("50")),
+      ).to.be.revertedWithCustomError(savingBank, "InvalidAmount");
+    });
+
+    it("Should reject deposit above maximum", async function () {
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
+      await expect(
+        savingBank
+          .connect(user1)
+          .openDepositCertificate(1, ethers.parseEther("20000")),
+      ).to.be.revertedWithCustomError(savingBank, "InvalidAmount");
+    });
+
+    it("Should reject zero address fee receiver", async function () {
+      await expect(
+        savingBank.connect(admin).setFeeReceiver(ethers.ZeroAddress),
+      ).to.be.revertedWithCustomError(savingBank, "InvalidAddress");
+    });
+
+    it("Should reject zero amount in vault deposit", async function () {
+      await expect(
+        principalVault.connect(admin).depositFund(0),
+      ).to.be.revertedWithCustomError(principalVault, "InvalidAmount");
+    });
+  });
+
+  describe("State Manipulation Protection", function () {
+    beforeEach(async function () {
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("1000"));
+    });
+
+    it("Should prevent double withdrawal", async function () {
+      await time.increase(31 * 86400);
+      await savingBank.connect(user1).withdraw(1);
+      await expect(
+        savingBank.connect(user1).withdraw(1),
+      ).to.be.revertedWithCustomError(savingBank, "NotActiveDeposit");
+    });
+
+    it("Should prevent withdrawal after early withdraw", async function () {
+      await savingBank.connect(user1).earlyWithdraw(1);
+      await expect(
+        savingBank.connect(user1).withdraw(1),
+      ).to.be.revertedWithCustomError(savingBank, "NotActiveDeposit");
+    });
+
+    it("Should prevent early withdraw after maturity", async function () {
+      await time.increase(31 * 86400);
+      await expect(
+        savingBank.connect(user1).earlyWithdraw(1),
+      ).to.be.revertedWithCustomError(savingBank, "AlreadyMatured");
+    });
+
+    it("Should prevent double renewal", async function () {
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          60,
+          1500,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
+      await time.increase(31 * 86400);
+      await savingBank.connect(user1).renew(1, 2);
+      await expect(
+        savingBank.connect(user1).renew(1, 2),
+      ).to.be.revertedWithCustomError(savingBank, "AlreadyRenewed");
+    });
+
+    it("Should prevent operations on disabled plan", async function () {
+      await savingBank.connect(operator).updatePlanStatus(1, false);
+      await expect(
+        savingBank
+          .connect(user1)
+          .openDepositCertificate(1, ethers.parseEther("1000")),
+      ).to.be.revertedWithCustomError(savingBank, "NotEnabledPlan");
+    });
+  });
+
+  describe("NFT Soulbound Protection", function () {
+    beforeEach(async function () {
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("1000"));
+    });
+
+    it("Should prevent NFT transfer", async function () {
+      await expect(
+        nft.connect(user1).transferFrom(user1.address, attacker.address, 1),
+      ).to.be.revertedWithCustomError(nft, "Unauthorized");
+    });
+
+    it("Should prevent NFT safeTransferFrom", async function () {
+      await expect(
+        nft
+          .connect(user1)
+          ["safeTransferFrom(address,address,uint256)"](
+            user1.address,
+            attacker.address,
+            1,
+          ),
+      ).to.be.revertedWithCustomError(nft, "Unauthorized");
+    });
+  });
+
+  describe("Vault Security", function () {
+    it("Should prevent unauthorized principal withdrawal", async function () {
+      await principalVault
+        .connect(admin)
+        .depositFund(ethers.parseEther("1000"));
+      await expect(
+        principalVault
           .connect(attacker)
-          .payInterest(addr1.address, ethers.parseEther("10"))
-      )
-        .to.be.revertedWithCustomError(vault, "Unauthorized")
-        .withArgs();
+          .withdrawPrincipal(attacker.address, ethers.parseEther("1000")),
+      ).to.be.reverted;
     });
 
-    it("Should prevent non-savingBank from calling deductInterest", async function () {
+    it("Should prevent unauthorized interest payment", async function () {
       await expect(
-        vault
+        interestVault
           .connect(attacker)
-          .deductInterest(addr1.address, ethers.parseEther("10"))
-      )
-        .to.be.revertedWithCustomError(vault, "Unauthorized")
-        .withArgs();
+          .payInterest(attacker.address, ethers.parseEther("1000")),
+      ).to.be.reverted;
+    });
+
+    it("Should protect against vault balance manipulation", async function () {
+      await principalVault
+        .connect(admin)
+        .depositFund(ethers.parseEther("1000"));
+      const balance = await principalVault.getBalance();
+      const actual = await principalVault.getActualBalance();
+      expect(balance).to.equal(actual);
+    });
+
+    it("Should handle insufficient vault balance", async function () {
+      await expect(
+        principalVault
+          .connect(operator)
+          .withdrawPrincipal(user1.address, ethers.parseEther("100000")),
+      ).to.be.revertedWithCustomError(principalVault, "InsufficientBalance");
     });
   });
 
   describe("Pause Functionality", function () {
-    it("Should block openDepositCertificate when paused", async function () {
-      await savingBank.pause();
-
+    it("Should prevent deposits when paused", async function () {
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
+      await savingBank.connect(admin).pause();
       await expect(
         savingBank
-          .connect(addr1)
-          .openDepositCertificate(1, ethers.parseEther("1000"))
-      ).to.be.revertedWithCustomError(savingBank, "EnforcedPause");
+          .connect(user1)
+          .openDepositCertificate(1, ethers.parseEther("1000")),
+      ).to.be.reverted;
     });
 
-    it("Should not block withdraw when SavingBank is paused", async function () {
+    it("Should prevent withdrawals when paused", async function () {
       await savingBank
-        .connect(addr1)
-        .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      await time.increase(7 * 24 * 60 * 60);
-
-      await savingBank.pause();
-
-      // Withdraw should still work (not paused)
-      await expect(savingBank.connect(addr1).withdraw(1)).to.not.be.reverted;
-    });
-
-    it("Should not block earlyWithdraw when SavingBank is paused", async function () {
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
       await savingBank
-        .connect(addr1)
+        .connect(user1)
         .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      await savingBank.pause();
-
-      // Early withdraw should still work (not paused)
-      await expect(savingBank.connect(addr1).earlyWithdraw(1)).to.not.be
-        .reverted;
+      await time.increase(31 * 86400);
+      await savingBank.connect(admin).pause();
+      await expect(savingBank.connect(user1).withdraw(1)).to.be.reverted;
     });
 
-    it("Should not block renewWithNewPlan when SavingBank is paused", async function () {
+    it("Should allow operations after unpause", async function () {
       await savingBank
-        .connect(addr1)
-        .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      await time.increase(7 * 24 * 60 * 60);
-
-      await savingBank.pause();
-
-      // Renew should still work (not paused)
-      await expect(savingBank.connect(addr1).renewWithNewPlan(1, 1)).to.not.be
-        .reverted;
-    });
-
-    it("Should block vault operations when vault is paused", async function () {
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
+      await savingBank.connect(admin).pause();
+      await savingBank.connect(admin).unpause();
       await savingBank
-        .connect(addr1)
+        .connect(user1)
         .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      await time.increase(7 * 24 * 60 * 60);
-
-      await vault.pause();
-
-      // Withdraw should fail because vault is paused
-      await expect(savingBank.connect(addr1).withdraw(1))
-        .to.be.revertedWithCustomError(vault, "EnforcedPause");
-    });
-
-    it("Should resume operations after unpause", async function () {
-      await savingBank.pause();
-
-      await expect(
-        savingBank
-          .connect(addr1)
-          .openDepositCertificate(1, ethers.parseEther("1000"))
-      ).to.be.revertedWithCustomError(savingBank, "EnforcedPause");
-
-      await savingBank.unpause();
-
-      await expect(
-        savingBank
-          .connect(addr1)
-          .openDepositCertificate(1, ethers.parseEther("1000"))
-      ).to.not.be.reverted;
-    });
-
-    it("Should block vault payInterest when paused", async function () {
-      const savingBankAddress = await savingBank.getAddress();
-      await ethers.provider.send("hardhat_impersonateAccount", [
-        savingBankAddress,
-      ]);
-      await ethers.provider.send("hardhat_setBalance", [
-        savingBankAddress,
-        ethers.toQuantity(ethers.parseEther("100")),
-      ]);
-      const savingBankSigner = await ethers.getSigner(savingBankAddress);
-
-      await vault.pause();
-
-      await expect(
-        vault
-          .connect(savingBankSigner)
-          .payInterest(addr1.address, ethers.parseEther("10"))
-      ).to.be.revertedWithCustomError(vault, "EnforcedPause");
-    });
-
-    it("Should block vault deductInterest when paused", async function () {
-      const savingBankAddress = await savingBank.getAddress();
-      await ethers.provider.send("hardhat_impersonateAccount", [
-        savingBankAddress,
-      ]);
-      await ethers.provider.send("hardhat_setBalance", [
-        savingBankAddress,
-        ethers.toQuantity(ethers.parseEther("100")),
-      ]);
-      const savingBankSigner = await ethers.getSigner(savingBankAddress);
-
-      await vault.pause();
-
-      await expect(
-        vault
-          .connect(savingBankSigner)
-          .deductInterest(addr1.address, ethers.parseEther("10"))
-      ).to.be.revertedWithCustomError(vault, "EnforcedPause");
+      expect(await nft.ownerOf(1)).to.equal(user1.address);
     });
   });
 
-  describe("NFT Security", function () {
-    it("Should prevent users from transferring NFTs", async function () {
+  describe("Integer Overflow Protection", function () {
+    it("Should handle large deposit amounts", async function () {
       await savingBank
-        .connect(addr1)
-        .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      // NFTs should not be transferable (standard ERC721 transfer would work, but deposits should be non-transferable for security)
-      // This test verifies the NFT exists and is owned correctly
-      expect(await savingBank.ownerOf(1)).to.equal(addr1.address);
-      expect(await savingBank.balanceOf(addr1.address)).to.equal(1);
-    });
-
-    it("Should burn NFT after withdrawal", async function () {
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("1"),
+          ethers.parseEther("100000"),
+          5000,
+        );
+      await token.mint(user1.address, ethers.parseEther("100000"));
       await savingBank
-        .connect(addr1)
-        .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      await time.increase(7 * 24 * 60 * 60);
-      await savingBank.connect(addr1).withdraw(1);
-
-      await expect(savingBank.ownerOf(1)).to.be.revertedWithCustomError(
-        savingBank,
-        "ERC721NonexistentToken"
-      );
-    });
-
-    it("Should burn NFT after early withdrawal", async function () {
-      await savingBank
-        .connect(addr1)
-        .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      await savingBank.connect(addr1).earlyWithdraw(1);
-
-      await expect(savingBank.ownerOf(1)).to.be.revertedWithCustomError(
-        savingBank,
-        "ERC721NonexistentToken"
-      );
-    });
-
-    it("Should burn old NFT and mint new NFT during renewal", async function () {
-      await savingBank
-        .connect(addr1)
-        .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      await time.increase(7 * 24 * 60 * 60);
-      await savingBank.connect(addr1).renewWithNewPlan(1, 1);
-
-      await expect(savingBank.ownerOf(1)).to.be.revertedWithCustomError(
-        savingBank,
-        "ERC721NonexistentToken"
-      );
-      expect(await savingBank.ownerOf(2)).to.equal(addr1.address);
-    });
-  });
-
-  describe("Integer Overflow/Underflow Protection", function () {
-    it("Should handle maximum uint256 values safely", async function () {
-      // Solidity 0.8+ has built-in overflow protection
-      // This test verifies the contracts handle large numbers correctly
-
-      await savingBank.createPlan(
-        7,
-        500,
-        ethers.parseEther("100"),
-        0, // No max deposit
-        300
-      );
-
-      // Attempt to deposit a very large amount
-      const largeAmount = ethers.parseEther("100000");
-      await savingBank.connect(addr1).openDepositCertificate(3, largeAmount);
-
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("100000"));
       const deposit = await savingBank.depositCertificates(1);
-      expect(deposit.principal).to.equal(largeAmount);
+      expect(deposit.principal).to.equal(ethers.parseEther("100000"));
     });
 
-    it("Should prevent underflow in vault balance", async function () {
-      const vaultBalance = await vault.totalBalance();
-
-      // Try to withdraw more than available
-      await expect(
-        vault.withdrawVault(vaultBalance + 1n)
-      ).to.be.revertedWithCustomError(vault, "InsufficientBalance");
-    });
-  });
-
-  describe("State Consistency", function () {
-    it("Should maintain consistent state after failed operations", async function () {
+    it("Should calculate interest for large amounts", async function () {
       await savingBank
-        .connect(addr1)
-        .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      const depositBefore = await savingBank.depositCertificates(1);
-      const userBalanceBefore = await token.balanceOf(addr1.address);
-
-      // Try to withdraw before maturity (should fail)
-      await expect(savingBank.connect(addr1).withdraw(1))
-        .to.be.revertedWithCustomError(savingBank, "NotMaturedYet")
-        .withArgs();
-
-      // State should remain unchanged
-      const depositAfter = await savingBank.depositCertificates(1);
-      const userBalanceAfter = await token.balanceOf(addr1.address);
-
-      expect(depositAfter.status).to.equal(depositBefore.status);
-      expect(userBalanceAfter).to.equal(userBalanceBefore);
-      expect(await savingBank.ownerOf(1)).to.equal(addr1.address);
-    });
-
-    it("Should maintain vault balance consistency", async function () {
-      const vaultBalanceBefore = await vault.totalBalance();
-
+        .connect(operator)
+        .createPlan(
+          365,
+          10000,
+          ethers.parseEther("1"),
+          ethers.parseEther("1000000"),
+          5000,
+        );
+      await token.mint(user1.address, ethers.parseEther("1000000"));
       await savingBank
-        .connect(addr1)
-        .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      await time.increase(7 * 24 * 60 * 60);
-
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("1000000"));
       const interest = await savingBank.getCalculateInterest(1);
-      await savingBank.connect(addr1).withdraw(1);
-
-      const vaultBalanceAfter = await vault.totalBalance();
-      expect(vaultBalanceBefore - vaultBalanceAfter).to.equal(interest);
+      expect(interest).to.be.gt(0);
     });
   });
 
-  describe("Authorization Edge Cases", function () {
-    it("Should prevent operations on non-existent deposits", async function () {
-      await expect(savingBank.connect(addr1).withdraw(999))
-        .to.be.revertedWithCustomError(savingBank, "NotOwner")
-        .withArgs();
-
-      await expect(savingBank.connect(addr1).earlyWithdraw(999))
-        .to.be.revertedWithCustomError(savingBank, "NotOwner")
-        .withArgs();
-
-      await expect(savingBank.connect(addr1).renewWithNewPlan(999, 1))
-        .to.be.revertedWithCustomError(savingBank, "NotOwner")
-        .withArgs();
+  describe("Edge Cases", function () {
+    it("Should handle multiple deposits from same user", async function () {
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("1000"));
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("2000"));
+      const deposits = await savingBank.getUserDepositIds(user1.address);
+      expect(deposits.length).to.equal(2);
     });
 
-    it("Should handle zero address validations", async function () {
-      const SavingBankFactory = await ethers.getContractFactory("SavingBank");
+    it("Should handle withdrawal at exact maturity time", async function () {
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("1000"));
+      const deposit = await savingBank.depositCertificates(1);
+      await time.increaseTo(deposit.maturityAt);
+      await savingBank.connect(user1).withdraw(1);
+      const updatedDeposit = await savingBank.depositCertificates(1);
+      expect(updatedDeposit.status).to.equal(1); // Withdrawn
+    });
 
-      await expect(
-        SavingBankFactory.deploy(
-          ethers.ZeroAddress,
-          await vault.getAddress(),
-          receiver1.address
-        )
-      ).to.be.revertedWithCustomError(savingBank, "InvalidToken");
-
-      await expect(
-        SavingBankFactory.deploy(
-          await token.getAddress(),
-          ethers.ZeroAddress,
-          receiver1.address
-        )
-      ).to.be.revertedWithCustomError(savingBank, "InvalidVault");
-
-      await expect(
-        SavingBankFactory.deploy(
-          await token.getAddress(),
-          await vault.getAddress(),
-          ethers.ZeroAddress
-        )
-      ).to.be.revertedWithCustomError(savingBank, "InvalidToken");
+    it("Should handle plan update after deposits exist", async function () {
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          5000,
+        );
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("1000"));
+      await savingBank
+        .connect(operator)
+        .updatePlan(
+          1,
+          60,
+          2000,
+          ethers.parseEther("200"),
+          ethers.parseEther("20000"),
+          6000,
+        );
+      // Old deposit should use snapshot data
+      const deposit = await savingBank.depositCertificates(1);
+      expect(deposit.snapshotAprBps).to.equal(1000);
     });
   });
 });

@@ -8,17 +8,58 @@
             },
             {
                 "internalType": "address",
-                "name": "_vault",
+                "name": "_principalVault",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "_interestVault",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "_nft",
                 "type": "address"
             },
             {
                 "internalType": "address",
                 "name": "_feeReceiver",
                 "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "_admin",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "_operator",
+                "type": "address"
             }
         ],
         "stateMutability": "nonpayable",
         "type": "constructor"
+    },
+    {
+        "inputs": [],
+        "name": "AccessControlBadConfirmation",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "neededRole",
+                "type": "bytes32"
+            }
+        ],
+        "name": "AccessControlUnauthorizedAccount",
+        "type": "error"
     },
     {
         "inputs": [],
@@ -28,109 +69,6 @@
     {
         "inputs": [],
         "name": "AlreadyRenewed",
-        "type": "error"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "sender",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "tokenId",
-                "type": "uint256"
-            },
-            {
-                "internalType": "address",
-                "name": "owner",
-                "type": "address"
-            }
-        ],
-        "name": "ERC721IncorrectOwner",
-        "type": "error"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "operator",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "tokenId",
-                "type": "uint256"
-            }
-        ],
-        "name": "ERC721InsufficientApproval",
-        "type": "error"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "approver",
-                "type": "address"
-            }
-        ],
-        "name": "ERC721InvalidApprover",
-        "type": "error"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "operator",
-                "type": "address"
-            }
-        ],
-        "name": "ERC721InvalidOperator",
-        "type": "error"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "owner",
-                "type": "address"
-            }
-        ],
-        "name": "ERC721InvalidOwner",
-        "type": "error"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "receiver",
-                "type": "address"
-            }
-        ],
-        "name": "ERC721InvalidReceiver",
-        "type": "error"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "sender",
-                "type": "address"
-            }
-        ],
-        "name": "ERC721InvalidSender",
-        "type": "error"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "tokenId",
-                "type": "uint256"
-            }
-        ],
-        "name": "ERC721NonexistentToken",
         "type": "error"
     },
     {
@@ -166,6 +104,11 @@
     {
         "inputs": [],
         "name": "InvalidMinDeposit",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidNFT",
         "type": "error"
     },
     {
@@ -214,92 +157,9 @@
         "type": "error"
     },
     {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "owner",
-                "type": "address"
-            }
-        ],
-        "name": "OwnableInvalidOwner",
-        "type": "error"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            }
-        ],
-        "name": "OwnableUnauthorizedAccount",
-        "type": "error"
-    },
-    {
         "inputs": [],
         "name": "ReentrancyGuardReentrantCall",
         "type": "error"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "token",
-                "type": "address"
-            }
-        ],
-        "name": "SafeERC20FailedOperation",
-        "type": "error"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "owner",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "approved",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "tokenId",
-                "type": "uint256"
-            }
-        ],
-        "name": "Approval",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "owner",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "operator",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "bool",
-                "name": "approved",
-                "type": "bool"
-            }
-        ],
-        "name": "ApprovalForAll",
-        "type": "event"
     },
     {
         "anonymous": false,
@@ -367,7 +227,7 @@
             },
             {
                 "indexed": false,
-                "internalType": "enum SavingBank.DepositStatus",
+                "internalType": "enum SavingBankV2.DepositStatus",
                 "name": "finalStatus",
                 "type": "uint8"
             }
@@ -394,17 +254,11 @@
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "previousOwner",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "newOwner",
+                "name": "newNFT",
                 "type": "address"
             }
         ],
-        "name": "OwnershipTransferred",
+        "name": "NFTUpdated",
         "type": "event"
     },
     {
@@ -512,24 +366,74 @@
         "inputs": [
             {
                 "indexed": true,
-                "internalType": "address",
-                "name": "from",
-                "type": "address"
+                "internalType": "bytes32",
+                "name": "role",
+                "type": "bytes32"
             },
             {
                 "indexed": true,
-                "internalType": "address",
-                "name": "to",
-                "type": "address"
+                "internalType": "bytes32",
+                "name": "previousAdminRole",
+                "type": "bytes32"
             },
             {
                 "indexed": true,
-                "internalType": "uint256",
-                "name": "tokenId",
-                "type": "uint256"
+                "internalType": "bytes32",
+                "name": "newAdminRole",
+                "type": "bytes32"
             }
         ],
-        "name": "Transfer",
+        "name": "RoleAdminChanged",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "bytes32",
+                "name": "role",
+                "type": "bytes32"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "sender",
+                "type": "address"
+            }
+        ],
+        "name": "RoleGranted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "bytes32",
+                "name": "role",
+                "type": "bytes32"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "sender",
+                "type": "address"
+            }
+        ],
+        "name": "RoleRevoked",
         "type": "event"
     },
     {
@@ -551,7 +455,13 @@
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "newVault",
+                "name": "newPrincipalVault",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "newInterestVault",
                 "type": "address"
             }
         ],
@@ -587,7 +497,7 @@
             },
             {
                 "indexed": false,
-                "internalType": "enum SavingBank.DepositStatus",
+                "internalType": "enum SavingBankV2.DepositStatus",
                 "name": "finalStatus",
                 "type": "uint8"
             }
@@ -596,37 +506,39 @@
         "type": "event"
     },
     {
-        "inputs": [
+        "inputs": [],
+        "name": "ADMIN_ROLE",
+        "outputs": [
             {
-                "internalType": "address",
-                "name": "to",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "tokenId",
-                "type": "uint256"
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
             }
         ],
-        "name": "approve",
-        "outputs": [],
-        "stateMutability": "nonpayable",
+        "stateMutability": "view",
         "type": "function"
     },
     {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "owner",
-                "type": "address"
-            }
-        ],
-        "name": "balanceOf",
+        "inputs": [],
+        "name": "DEFAULT_ADMIN_ROLE",
         "outputs": [
             {
-                "internalType": "uint256",
+                "internalType": "bytes32",
                 "name": "",
-                "type": "uint256"
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "OPERATOR_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
             }
         ],
         "stateMutability": "view",
@@ -701,7 +613,7 @@
                 "type": "uint256"
             },
             {
-                "internalType": "enum SavingBank.DepositStatus",
+                "internalType": "enum SavingBankV2.DepositStatus",
                 "name": "status",
                 "type": "uint8"
             },
@@ -745,25 +657,6 @@
     {
         "inputs": [],
         "name": "feeReceiver",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "tokenId",
-                "type": "uint256"
-            }
-        ],
-        "name": "getApproved",
         "outputs": [
             {
                 "internalType": "address",
@@ -829,7 +722,7 @@
                 "type": "uint256"
             },
             {
-                "internalType": "enum SavingBank.DepositStatus",
+                "internalType": "enum SavingBankV2.DepositStatus",
                 "name": "status",
                 "type": "uint8"
             },
@@ -889,6 +782,25 @@
     {
         "inputs": [
             {
+                "internalType": "bytes32",
+                "name": "role",
+                "type": "bytes32"
+            }
+        ],
+        "name": "getRoleAdmin",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "address",
                 "name": "user",
                 "type": "address"
@@ -908,17 +820,35 @@
     {
         "inputs": [
             {
-                "internalType": "address",
-                "name": "owner",
-                "type": "address"
+                "internalType": "bytes32",
+                "name": "role",
+                "type": "bytes32"
             },
             {
                 "internalType": "address",
-                "name": "operator",
+                "name": "account",
                 "type": "address"
             }
         ],
-        "name": "isApprovedForAll",
+        "name": "grantRole",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bytes32",
+                "name": "role",
+                "type": "bytes32"
+            },
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            }
+        ],
+        "name": "hasRole",
         "outputs": [
             {
                 "internalType": "bool",
@@ -931,12 +861,12 @@
     },
     {
         "inputs": [],
-        "name": "name",
+        "name": "interestVault",
         "outputs": [
             {
-                "internalType": "string",
+                "internalType": "contract IInterestVault",
                 "name": "",
-                "type": "string"
+                "type": "address"
             }
         ],
         "stateMutability": "view",
@@ -969,6 +899,19 @@
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "nft",
+        "outputs": [
+            {
+                "internalType": "contract ISavingBankNFT",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [
             {
                 "internalType": "uint256",
@@ -984,38 +927,6 @@
         "name": "openDepositCertificate",
         "outputs": [],
         "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "owner",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "tokenId",
-                "type": "uint256"
-            }
-        ],
-        "name": "ownerOf",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "stateMutability": "view",
         "type": "function"
     },
     {
@@ -1039,6 +950,19 @@
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "principalVault",
+        "outputs": [
+            {
+                "internalType": "contract IPrincipalVault",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [
             {
                 "internalType": "uint256",
@@ -1051,7 +975,7 @@
                 "type": "uint256"
             }
         ],
-        "name": "renewWithNewPlan",
+        "name": "renew",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -1059,42 +983,17 @@
     {
         "inputs": [
             {
-                "internalType": "uint256",
-                "name": "depositId",
-                "type": "uint256"
-            }
-        ],
-        "name": "renewWithSamePlan",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "renounceOwnership",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "from",
-                "type": "address"
+                "internalType": "bytes32",
+                "name": "role",
+                "type": "bytes32"
             },
             {
                 "internalType": "address",
-                "name": "to",
+                "name": "callerConfirmation",
                 "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "tokenId",
-                "type": "uint256"
             }
         ],
-        "name": "safeTransferFrom",
+        "name": "renounceRole",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -1102,27 +1001,17 @@
     {
         "inputs": [
             {
-                "internalType": "address",
-                "name": "from",
-                "type": "address"
+                "internalType": "bytes32",
+                "name": "role",
+                "type": "bytes32"
             },
             {
                 "internalType": "address",
-                "name": "to",
+                "name": "account",
                 "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "tokenId",
-                "type": "uint256"
-            },
-            {
-                "internalType": "bytes",
-                "name": "data",
-                "type": "bytes"
             }
         ],
-        "name": "safeTransferFrom",
+        "name": "revokeRole",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -1175,24 +1064,6 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "operator",
-                "type": "address"
-            },
-            {
-                "internalType": "bool",
-                "name": "approved",
-                "type": "bool"
-            }
-        ],
-        "name": "setApprovalForAll",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
                 "name": "newFeeReceiver",
                 "type": "address"
             }
@@ -1206,11 +1077,29 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "newVault",
+                "name": "newNFT",
                 "type": "address"
             }
         ],
-        "name": "setVault",
+        "name": "setNFT",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "newPrincipalVault",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "newInterestVault",
+                "type": "address"
+            }
+        ],
+        "name": "setVaults",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -1236,19 +1125,6 @@
     },
     {
         "inputs": [],
-        "name": "symbol",
-        "outputs": [
-            {
-                "internalType": "string",
-                "name": "",
-                "type": "string"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
         "name": "token",
         "outputs": [
             {
@@ -1258,61 +1134,6 @@
             }
         ],
         "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "tokenId",
-                "type": "uint256"
-            }
-        ],
-        "name": "tokenURI",
-        "outputs": [
-            {
-                "internalType": "string",
-                "name": "",
-                "type": "string"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "from",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "to",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "tokenId",
-                "type": "uint256"
-            }
-        ],
-        "name": "transferFrom",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "newOwner",
-                "type": "address"
-            }
-        ],
-        "name": "transferOwnership",
-        "outputs": [],
-        "stateMutability": "nonpayable",
         "type": "function"
     },
     {
@@ -1397,19 +1218,6 @@
                 "internalType": "uint256",
                 "name": "",
                 "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "vault",
-        "outputs": [
-            {
-                "internalType": "contract ILiquidityVault",
-                "name": "",
-                "type": "address"
             }
         ],
         "stateMutability": "view",
