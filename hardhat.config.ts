@@ -9,6 +9,7 @@ import "@nomicfoundation/hardhat-ethers";
 import "@nomicfoundation/hardhat-chai-matchers";
 import "@typechain/hardhat";
 import * as dotenv from "dotenv";
+import { HardhatUserConfig } from "hardhat/config";
 
 dotenv.config();
 
@@ -23,13 +24,18 @@ task("accounts", "Prints the list of accounts", async (taskArgs, hre) => {
 const {
   TESTNET_PRIVATE_KEY: testnetPrivateKey,
   MAINNET_PRIVATE_KEY: mainnetPrivateKey,
+  USER1_PRIVATE_KEY: user1PrivateKey,
 } = process.env;
 const reportGas = process.env.REPORT_GAS;
 
-module.exports = {
+const config: HardhatUserConfig = {
   networks: {
     hardhat: {
       chainId: 31337,
+      accounts: {
+        count: 10, // Generate 10 accounts for testing
+        accountsBalance: "10000000000000000000000", // 10000 ETH each
+      },
     },
     localhost: {
       url: "http://127.0.0.1:8545",
@@ -38,7 +44,11 @@ module.exports = {
     sepolia: {
       url: "https://eth-sepolia.g.alchemy.com/v2/YnyRV2BOccnDHMx83D3b9",
       chainId: 11155111,
-      accounts: testnetPrivateKey ? [testnetPrivateKey] : [],
+      accounts: testnetPrivateKey 
+        ? user1PrivateKey 
+          ? [testnetPrivateKey, user1PrivateKey]  // deployer + user1
+          : [testnetPrivateKey]
+        : [],
       timeout: 40000,
     },
   },
@@ -65,7 +75,9 @@ module.exports = {
     spacing: 4,
   },
   gasReporter: {
-    enabled: reportGas == "1",
+    enabled: reportGas === "1",
+    currency: "USD",
+    gasPrice: 21,
   },
   contractSizer: {
     alphaSort: true,
@@ -73,7 +85,7 @@ module.exports = {
     runOnCompile: true,
   },
   etherscan: {
-    apiKey: process.env.ETHERSCAN_API_KEY!,
+    apiKey: process.env.ETHERSCAN_API_KEY || "",
   },
   sourcify: {
     enabled: false,
@@ -83,13 +95,35 @@ module.exports = {
   },
   namedAccounts: {
     deployer: {
-      default: 0, // ← SỬA: Thêm default
+      default: 0,
       localhost: 0,
       sepolia: 0,
     },
+    operator: {
+      default: 0, // Same as deployer by default
+      localhost: 0,
+      sepolia: 0,
+    },
+    feeReceiver: {
+      default: 0, // Same as deployer by default
+      localhost: 0,
+      sepolia: 0,
+    },
+    user1: {
+      default: 1, // Second account in hardhat network
+      localhost: 1,
+      sepolia: 1, // Use second private key if provided
+    },
+    user2: {
+      default: 2, // Third account in hardhat network
+      localhost: 2,
+      sepolia: 0, // Fallback to deployer if no third key
+    },
   },
   typechain: {
-    outDir: "typechain",
+    outDir: "typechain-types",
     target: "ethers-v6",
   },
 };
+
+export default config;
