@@ -9,46 +9,43 @@ async function main() {
   console.log("=== RENEW DEPOSIT ===\n");
 
   const [deployer, user1] = await ethers.getSigners();
-  const token = await ethers.getContractAt(
-    "ERC20Mock",
-    "0xe264592FC0402d449E9388108E85C13ED8c76D5a",
-  );
-  const nft = await ethers.getContractAt(
-    "SavingBankNFT",
-    "0x396b84f8Ff1cF125Da399F9a7D5A34179c06C81F",
-  );
-  const savingBank = await ethers.getContractAt(
-    "SavingBankV2",
-    "0x88A4805e23ceF4DC0Aeb881Dac233872281822e0",
-  );
+  
+  const tokenDeployment = await deployments.get("ERC20Mock");
+  const nftDeployment = await deployments.get("SavingBankNFT");
+  const savingBankDeployment = await deployments.get("SavingBankV2");
+  
+  const token = await ethers.getContractAt("ERC20Mock", tokenDeployment.address);
+  const nft = await ethers.getContractAt("SavingBankNFT", nftDeployment.address);
+  const savingBank = await ethers.getContractAt("SavingBankV2", savingBankDeployment.address);
 
-  console.log("User:", user1.address);
+  const user = user1 || deployer;
+  console.log("User:", user.address);
   console.log();
 
-  // Setup: Tạo deposit mới cho user1
-  console.log("💰 Setting up new deposit for user1...");
+  // Setup: Tạo deposit mới cho user
+  console.log("💰 Setting up new deposit for user...");
   const mintAmount = ethers.parseEther("10000");
   const depositAmount = ethers.parseEther("5000");
 
-  const tx1 = await token.mint(user1.address, mintAmount);
+  const tx1 = await token.mint(user.address, mintAmount);
   await tx1.wait();
 
   const principalVaultAddress = await savingBank.principalVault();
-  const tx2 = await token
-    .connect(user1)
-    .approve(principalVaultAddress, depositAmount);
+  const tx2 = user1
+    ? await token.connect(user1).approve(principalVaultAddress, depositAmount)
+    : await token.approve(principalVaultAddress, depositAmount);
   await tx2.wait();
 
   // Open deposit với Plan 1 (30 ngày - 5% APR)
   const oldPlanId = 1;
-  const tx3 = await savingBank
-    .connect(user1)
-    .openDepositCertificate(oldPlanId, depositAmount);
+  const tx3 = user1
+    ? await savingBank.connect(user1).openDepositCertificate(oldPlanId, depositAmount)
+    : await savingBank.openDepositCertificate(oldPlanId, depositAmount);
   await tx3.wait();
   console.log("  ✅ Initial deposit created\n");
 
   // Get deposit ID
-  const userDeposits = await savingBank.getUserDepositIds(user1.address);
+  const userDeposits = await savingBank.getUserDepositIds(user.address);
   const oldDepositId = userDeposits[userDeposits.length - 1];
 
   // Check old deposit info
@@ -93,12 +90,14 @@ async function main() {
   console.log("  Old Plan:", oldPlanId, "(30 days - 5% APR)");
   console.log("  New Plan:", newPlanId, "(90 days - 8% APR)");
 
-  const tx4 = await savingBank.connect(user1).renew(oldDepositId, newPlanId);
-  const receipt = await tx4.wait();
+  const tx4 = user1
+    ? await savingBank.connect(user1).renew(oldDepositId, newPlanId)
+    : await savingBank.renew(oldDepositId, newPlanId);
+  await tx4.wait();
   console.log("  ✅ Deposit renewed\n");
 
   // Get new deposit ID from user deposits
-  const newUserDeposits = await savingBank.getUserDepositIds(user1.address);
+  const newUserDeposits = await savingBank.getUserDepositIds(user.address);
   const newDepositId = newUserDeposits[newUserDeposits.length - 1];
 
   // Check old deposit status
@@ -164,7 +163,7 @@ async function main() {
   const newNftOwner = await nft.ownerOf(newDepositId);
   console.log("  ✅ New NFT minted");
   console.log("  New NFT Owner:", newNftOwner);
-  console.log("  Owner matches user:", newNftOwner === user1.address);
+  console.log("  Owner matches user:", newNftOwner === user.address);
   console.log();
 
   // Calculate new expected interest

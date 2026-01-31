@@ -8,20 +8,19 @@ async function main() {
   console.log("=== VIEW USER DEPOSITS ===\n");
 
   const [deployer, user1] = await ethers.getSigners();
-  const nft = await ethers.getContractAt(
-    "SavingBankNFT",
-    "0x396b84f8Ff1cF125Da399F9a7D5A34179c06C81F",
-  );
-  const savingBank = await ethers.getContractAt(
-    "SavingBankV2",
-    "0x88A4805e23ceF4DC0Aeb881Dac233872281822e0",
-  );
+  
+  const nftDeployment = await deployments.get("SavingBankNFT");
+  const savingBankDeployment = await deployments.get("SavingBankV2");
+  
+  const nft = await ethers.getContractAt("SavingBankNFT", nftDeployment.address);
+  const savingBank = await ethers.getContractAt("SavingBankV2", savingBankDeployment.address);
 
-  console.log("User:", user1.address);
+  const user = user1 || deployer;
+  console.log("User:", user.address);
   console.log();
 
   // Get all deposit IDs for user
-  const depositIds = await savingBank.getUserDepositIds(user1.address);
+  const depositIds = await savingBank.getUserDepositIds(user.address);
 
   if (depositIds.length === 0) {
     console.log("❌ User has no deposits");

@@ -8,22 +8,16 @@ async function main() {
   console.log("=== ADMIN FUNCTIONS ===\n");
 
   const [deployer] = await ethers.getSigners();
-  const token = await ethers.getContractAt(
-    "ERC20Mock",
-    "0xe264592FC0402d449E9388108E85C13ED8c76D5a",
-  );
-  const principalVault = await ethers.getContractAt(
-    "PrincipalVault",
-    "0x2a0dEb355ac0F1008375e57e93871Bef408B3436",
-  );
-  const interestVault = await ethers.getContractAt(
-    "InterestVault",
-    "0x386a5c3308c10c7A5A1F65EAAEf0ec1665Dc3b0E",
-  );
-  const savingBank = await ethers.getContractAt(
-    "SavingBankV2",
-    "0x88A4805e23ceF4DC0Aeb881Dac233872281822e0",
-  );
+  
+  const tokenDeployment = await deployments.get("ERC20Mock");
+  const principalVaultDeployment = await deployments.get("PrincipalVault");
+  const interestVaultDeployment = await deployments.get("InterestVault");
+  const savingBankDeployment = await deployments.get("SavingBankV2");
+  
+  const token = await ethers.getContractAt("ERC20Mock", tokenDeployment.address);
+  const principalVault = await ethers.getContractAt("PrincipalVault", principalVaultDeployment.address);
+  const interestVault = await ethers.getContractAt("InterestVault", interestVaultDeployment.address);
+  const savingBank = await ethers.getContractAt("SavingBankV2", savingBankDeployment.address);
 
   console.log("Admin:", deployer.address);
   console.log();
@@ -141,10 +135,7 @@ async function main() {
     ethers.formatEther(additionalFund),
     "tokens to InterestVault...",
   );
-  const tx6 = await token.approve(
-    await interestVault.getAddress(),
-    additionalFund,
-  );
+  const tx6 = await token.approve(interestVaultDeployment.address, additionalFund);
   await tx6.wait();
   const tx7 = await interestVault.depositFund(additionalFund);
   await tx7.wait();

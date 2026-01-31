@@ -9,46 +9,43 @@ async function main() {
   console.log("=== EARLY WITHDRAWAL ===\n");
 
   const [deployer, user1] = await ethers.getSigners();
-  const token = await ethers.getContractAt(
-    "ERC20Mock",
-    "0xe264592FC0402d449E9388108E85C13ED8c76D5a",
-  );
-  const nft = await ethers.getContractAt(
-    "SavingBankNFT",
-    "0x396b84f8Ff1cF125Da399F9a7D5A34179c06C81F",
-  );
-  const savingBank = await ethers.getContractAt(
-    "SavingBankV2",
-    "0x88A4805e23ceF4DC0Aeb881Dac233872281822e0",
-  );
+  
+  const tokenDeployment = await deployments.get("ERC20Mock");
+  const nftDeployment = await deployments.get("SavingBankNFT");
+  const savingBankDeployment = await deployments.get("SavingBankV2");
+  
+  const token = await ethers.getContractAt("ERC20Mock", tokenDeployment.address);
+  const nft = await ethers.getContractAt("SavingBankNFT", nftDeployment.address);
+  const savingBank = await ethers.getContractAt("SavingBankV2", savingBankDeployment.address);
 
-  console.log("User:", user1.address);
+  const user = user1 || deployer;
+  console.log("User:", user.address);
   console.log();
 
-  // Mint tokens và tạo deposit mới cho user1
-  console.log("💰 Setting up new deposit for user1...");
+  // Mint tokens và tạo deposit mới cho user
+  console.log("💰 Setting up new deposit for user...");
   const mintAmount = ethers.parseEther("10000");
   const depositAmount = ethers.parseEther("3000");
 
-  const tx1 = await token.mint(user1.address, mintAmount);
+  const tx1 = await token.mint(user.address, mintAmount);
   await tx1.wait();
 
   const principalVaultAddress = await savingBank.principalVault();
-  const tx2 = await token
-    .connect(user1)
-    .approve(principalVaultAddress, depositAmount);
+  const tx2 = user1
+    ? await token.connect(user1).approve(principalVaultAddress, depositAmount)
+    : await token.approve(principalVaultAddress, depositAmount);
   await tx2.wait();
 
   // Open deposit với Plan 2 (90 ngày - 30% penalty)
   const planId = 2;
-  const tx3 = await savingBank
-    .connect(user1)
-    .openDepositCertificate(planId, depositAmount);
+  const tx3 = user1
+    ? await savingBank.connect(user1).openDepositCertificate(planId, depositAmount)
+    : await savingBank.openDepositCertificate(planId, depositAmount);
   await tx3.wait();
   console.log("  ✅ Deposit created\n");
 
-  // Get deposit ID (assume it's 2 if this is the second deposit)
-  const userDeposits = await savingBank.getUserDepositIds(user1.address);
+  // Get deposit ID
+  const userDeposits = await savingBank.getUserDepositIds(user.address);
   const depositId = userDeposits[userDeposits.length - 1];
 
   // Check deposit info
@@ -76,15 +73,8 @@ async function main() {
   );
   console.log();
 
-  // // Fast forward time but not to maturity (only 30 days out of 90)
-  // console.log("⏰ Fast forwarding 30 days (1/3 of duration)...");
-  // await time.increase(30 * 24 * 60 * 60); // 30 days
-  // const currentTime = await time.latest();
-  // console.log("  Current time:", new Date(currentTime * 1000).toLocaleString());
-  // console.log();
-
   // Check balance before withdraw
-  const balanceBefore = await token.balanceOf(user1.address);
+  const balanceBefore = await token.balanceOf(user.address);
   console.log("💼 User Balance Before:");
   console.log("  Balance:", ethers.formatEther(balanceBefore), "tokens");
   console.log();
@@ -108,12 +98,14 @@ async function main() {
 
   // Early withdraw
   console.log("💸 Performing early withdrawal...");
-  const tx = await savingBank.connect(user1).earlyWithdraw(depositId);
-  const receipt = await tx.wait();
+  const tx = user1
+    ? await savingBank.connect(user1).earlyWithdraw(depositId)
+    : await savingBank.earlyWithdraw(depositId);
+  await tx.wait();
   console.log("  ✅ Early withdrawal completed\n");
 
   // Check balance after withdraw
-  const balanceAfter = await token.balanceOf(user1.address);
+  const balanceAfter = await token.balanceOf(user.address);
   const received = balanceAfter - balanceBefore;
   console.log("💼 User Balance After:");
   console.log("  Balance:", ethers.formatEther(balanceAfter), "tokens");
