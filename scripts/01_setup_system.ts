@@ -32,7 +32,7 @@ async function main() {
   console.log("  SavingBank:", savingBankDeployment.address);
   console.log();
 
-  // Setup NFT
+  // Setup NFT - Grant ADMIN_ROLE quyền set SavingBank
   console.log("⚙️  Setting up NFT...");
   const tx1 = await nft.setSavingBank(savingBankDeployment.address);
   await tx1.wait();

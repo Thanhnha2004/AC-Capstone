@@ -121,7 +121,7 @@ const config: HardhatUserConfig = {
     },
   },
   typechain: {
-    outDir: "typechain-types",
+    outDir: "typechain",
     target: "ethers-v6",
   },
 };

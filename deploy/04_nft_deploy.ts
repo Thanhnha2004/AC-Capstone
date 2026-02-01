@@ -9,7 +9,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   await deploy("SavingBankNFT", {
     from: deployer,
-    args: [],
+    args: [deployer, deployer], // admin, operator
     log: true,
   });
 };

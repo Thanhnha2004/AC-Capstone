@@ -31,7 +31,7 @@ describe("Integration Tests", function () {
     token = await TokenFactory.deploy();
 
     const NFTFactory = await ethers.getContractFactory("SavingBankNFT");
-    nft = await NFTFactory.deploy();
+    nft = await NFTFactory.deploy(admin.address, operator.address);
 
     const PrincipalVaultFactory = await ethers.getContractFactory(
       "PrincipalVault",

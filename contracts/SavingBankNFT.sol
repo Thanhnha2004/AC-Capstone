@@ -2,11 +2,11 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/Base64.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
-contract SavingBankNFT is ERC721URIStorage, Ownable {
+contract SavingBankNFT is ERC721URIStorage, AccessControl {
     using Strings for uint256;
 
     /*//////////////////////////////////////////////////////////////
@@ -15,6 +15,12 @@ contract SavingBankNFT is ERC721URIStorage, Ownable {
     error Unauthorized();
     error InvalidAddress();
     error TokenNotExists();
+
+    /*//////////////////////////////////////////////////////////////
+                              CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
     /*//////////////////////////////////////////////////////////////
                                STRUCTS
@@ -52,10 +58,18 @@ contract SavingBankNFT is ERC721URIStorage, Ownable {
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
-    constructor()
-        ERC721("Saving Bank Certificate", "SBC")
-        Ownable(msg.sender)
-    {}
+    constructor(
+        address _admin,
+        address _operator
+    ) ERC721("Saving Bank Certificate", "SBC") {
+        if (_admin == address(0)) revert InvalidAddress();
+        if (_operator == address(0)) revert InvalidAddress();
+
+        // Grant roles
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(ADMIN_ROLE, _admin);
+        _grantRole(OPERATOR_ROLE, _operator);
+    }
 
     /*//////////////////////////////////////////////////////////////
                         SAVINGBANK FUNCTIONS
@@ -109,7 +123,7 @@ contract SavingBankNFT is ERC721URIStorage, Ownable {
      * @notice Set the SavingBank contract address
      * @param _savingBank Address of the SavingBank contract
      */
-    function setSavingBank(address _savingBank) external onlyOwner {
+    function setSavingBank(address _savingBank) external onlyRole(ADMIN_ROLE) {
         if (_savingBank == address(0)) revert InvalidAddress();
         address oldBank = savingBank;
         savingBank = _savingBank;
@@ -129,6 +143,15 @@ contract SavingBankNFT is ERC721URIStorage, Ownable {
         uint256 tokenId
     ) external view returns (CertificateData memory) {
         return _certificateData[tokenId];
+    }
+
+    /**
+     * @notice Override supportsInterface for AccessControl and ERC721
+     */
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view override(ERC721URIStorage, AccessControl) returns (bool) {
+        return super.supportsInterface(interfaceId);
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -41,7 +41,7 @@ describe("SavingBank Core Tests", function () {
 
     // Deploy NFT
     const NFTFactory = await ethers.getContractFactory("SavingBankNFT");
-    nft = await NFTFactory.deploy();
+    nft = await NFTFactory.deploy(admin.address, operator.address);
 
     // Deploy vaults
     const PrincipalVaultFactory = await ethers.getContractFactory(
@@ -554,7 +554,7 @@ describe("SavingBank Core Tests", function () {
     it("Should update NFT contract", async function () {
       const newNFT = await (
         await ethers.getContractFactory("SavingBankNFT")
-      ).deploy();
+      ).deploy(admin.address, operator.address);
       await expect(
         savingBank.connect(admin).setNFT(await newNFT.getAddress()),
       ).to.emit(savingBank, "NFTUpdated");
