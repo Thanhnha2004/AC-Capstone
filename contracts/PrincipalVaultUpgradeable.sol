@@ -2,17 +2,20 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol"; // Giữ nguyên (interface)
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-/**
- * @title InterestVault
- * @notice Vault để giữ tiền lãi và trả lãi cho người dùng
- * @dev Sử dụng AccessControl để quản lý ADMIN_ROLE và OPERATOR_ROLE
- */
-contract InterestVault is AccessControl, Pausable, ReentrancyGuard {
+contract PrincipalVaultUpgradeable is
+    Initializable,
+    AccessControlUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuardUpgradeable,
+    UUPSUpgradeable
+{
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -32,17 +35,34 @@ contract InterestVault is AccessControl, Pausable, ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                            STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
-    IERC20 public immutable token;
-    uint256 public totalBalance; // Tổng số dư token lãi trong vault
+    IERC20 public token;
+    uint256 public totalBalance; // Tổng số dư token trong vault
 
     /*//////////////////////////////////////////////////////////////
-                             CONSTRUCTOR
+                             INITIALIZER
     //////////////////////////////////////////////////////////////*/
-    constructor(address _token, address _admin, address _operator) {
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
+        address _token,
+        address _admin,
+        address _operator
+    ) public initializer {
         if (_token == address(0)) revert InvalidToken();
         if (_admin == address(0)) revert InvalidAddress();
         if (_operator == address(0)) revert InvalidAddress();
 
+        // Initialize parent contracts
+        __AccessControl_init();
+        __Pausable_init();
+        __ReentrancyGuard_init();
+        __UUPSUpgradeable_init();
+
+        // Set state variables
         token = IERC20(_token);
 
         // Grant roles
@@ -54,18 +74,28 @@ contract InterestVault is AccessControl, Pausable, ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
-    event InterestPaid(address indexed user, uint256 amount);
-    event InterestReceived(address indexed user, uint256 amount);
+    event PrincipalDeposited(address indexed from, uint256 amount);
+    event PrincipalWithdrawn(address indexed to, uint256 amount);
     event AdminFunded(address indexed admin, uint256 amount);
     event AdminWithdrawn(address indexed admin, uint256 amount);
     event SavingBankUpdated(address indexed savingBank);
+    event BalanceSnapshot(
+        uint256 totalBalance,
+        uint256 actualBalance,
+        uint256 timestamp
+    );
+    event LowBalanceWarning(
+        address indexed vault,
+        uint256 currentBalance,
+        uint256 requiredBalance
+    );
 
     /*//////////////////////////////////////////////////////////////
                           ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Admin nạp tiền lãi vào vault
+     * @notice Admin nạp thêm tiền vào vault (nếu cần)
      * @param amount Số lượng token
      */
     function depositFund(
@@ -106,52 +136,78 @@ contract InterestVault is AccessControl, Pausable, ReentrancyGuard {
         _unpause();
     }
 
+    /**
+     * @notice Override required by UUPSUpgradeable - chỉ ADMIN mới upgrade được
+     */
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyRole(ADMIN_ROLE) {}
+
     /*//////////////////////////////////////////////////////////////
                          OPERATOR FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Trả lãi cho user
-     * @param user Địa chỉ nhận lãi
-     * @param amount Số lượng lãi
+     * @notice Nhận tiền gốc từ SavingBank khi user deposit
+     * @param from Địa chỉ gửi tiền
+     * @param amount Số lượng token
      */
-    function payInterest(
-        address user,
+    function depositPrincipal(
+        address from,
         uint256 amount
     ) external onlyRole(OPERATOR_ROLE) whenNotPaused nonReentrant {
-        if (user == address(0)) revert InvalidAddress();
+        if (from == address(0)) revert InvalidAddress();
         if (amount == 0) revert InvalidAmount();
-        if (amount > totalBalance) revert InsufficientBalance();
 
-        totalBalance -= amount;
-        token.safeTransfer(user, amount);
+        totalBalance += amount;
+        token.safeTransferFrom(from, address(this), amount);
 
-        emit InterestPaid(user, amount);
+        emit PrincipalDeposited(from, amount);
     }
 
     /**
-     * @notice Chuyển lãi trực tiếp vào PrincipalVault để compound
-     * @dev Được gọi khi user renew deposit
-     * @param principalVault Địa chỉ PrincipalVault
+     * @notice Nhận tiền trực tiếp vào vault (cho compound từ InterestVault)
+     * @dev Không cần transferFrom vì tiền đã được transfer trực tiếp vào
      * @param user Địa chỉ user (để track)
-     * @param amount Số lượng lãi
+     * @param amount Số lượng token đã nhận
      */
-    function transferInterestToPrincipal(
-        address principalVault,
+    function receiveDirectDeposit(
         address user,
         uint256 amount
     ) external onlyRole(OPERATOR_ROLE) whenNotPaused nonReentrant {
-        if (principalVault == address(0)) revert InvalidAddress();
         if (user == address(0)) revert InvalidAddress();
+        if (amount == 0) revert InvalidAmount();
+
+        // Tiền đã được transfer vào, chỉ cần update balance
+        totalBalance += amount;
+
+        emit PrincipalDeposited(user, amount);
+    }
+
+    /**
+     * @notice Trả tiền gốc cho user khi withdraw
+     * @param to Địa chỉ nhận tiền
+     * @param amount Số lượng token
+     */
+    function withdrawPrincipal(
+        address to,
+        uint256 amount
+    ) external onlyRole(OPERATOR_ROLE) whenNotPaused nonReentrant {
+        if (to == address(0)) revert InvalidAddress();
         if (amount == 0) revert InvalidAmount();
         if (amount > totalBalance) revert InsufficientBalance();
 
+        uint256 currentBalance = token.balanceOf(address(this));
+
+        if (currentBalance < (amount * 11) / 10) {
+            // Less than 110% of required
+            emit LowBalanceWarning(address(this), currentBalance, amount);
+        }
+
         totalBalance -= amount;
+        token.safeTransfer(to, amount);
 
-        // Transfer trực tiếp vào PrincipalVault
-        token.safeTransfer(principalVault, amount);
-
-        emit InterestReceived(user, amount);
+        emit PrincipalWithdrawn(to, amount);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -171,4 +227,13 @@ contract InterestVault is AccessControl, Pausable, ReentrancyGuard {
     function getActualBalance() external view returns (uint256) {
         return token.balanceOf(address(this));
     }
+
+    /*//////////////////////////////////////////////////////////////
+                          STORAGE GAP
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Storage gap for future upgrades
+     */
+    uint256[50] private __gap;
 }

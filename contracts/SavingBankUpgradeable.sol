@@ -3,9 +3,11 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 interface IPrincipalVault {
     function depositPrincipal(address from, uint256 amount) external;
@@ -40,7 +42,13 @@ interface ISavingBankNFT {
  * @notice Saving Bank với Access Control và 2 vault riêng biệt
  * @dev Không giữ tiền, tất cả tiền được giữ ở PrincipalVault và InterestVault
  */
-contract SavingBankV2 is AccessControl, Pausable, ReentrancyGuard {
+contract SavingBankUpgradeable is
+    Initializable,
+    AccessControlUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuardUpgradeable,
+    UUPSUpgradeable
+{
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -63,6 +71,8 @@ contract SavingBankV2 is AccessControl, Pausable, ReentrancyGuard {
     error NotMaturedYet();
     error AlreadyMatured();
     error AlreadyRenewed();
+    error OnlyTimelockOrAdmin();
+    error InvalidTimelock();
 
     /*//////////////////////////////////////////////////////////////
                               CONSTANTS
@@ -112,7 +122,7 @@ contract SavingBankV2 is AccessControl, Pausable, ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                            STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
-    IERC20 public immutable token;
+    IERC20 public token;
     ISavingBankNFT public nft;
 
     uint256 public nextPlanId;
@@ -125,11 +135,18 @@ contract SavingBankV2 is AccessControl, Pausable, ReentrancyGuard {
     IPrincipalVault public principalVault;
     IInterestVault public interestVault;
     address public feeReceiver;
+    address public timelock;
 
     /*//////////////////////////////////////////////////////////////
-                             CONSTRUCTOR
+                            INITIALIZER
     //////////////////////////////////////////////////////////////*/
-    constructor(
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         address _token,
         address _principalVault,
         address _interestVault,
@@ -137,7 +154,8 @@ contract SavingBankV2 is AccessControl, Pausable, ReentrancyGuard {
         address _feeReceiver,
         address _admin,
         address _operator
-    ) {
+    ) public initializer {
+        // Validation (giữ nguyên như constructor cũ)
         if (_token == address(0)) revert InvalidToken();
         if (_principalVault == address(0)) revert InvalidVault();
         if (_interestVault == address(0)) revert InvalidVault();
@@ -146,6 +164,13 @@ contract SavingBankV2 is AccessControl, Pausable, ReentrancyGuard {
         if (_admin == address(0)) revert InvalidAddress();
         if (_operator == address(0)) revert InvalidAddress();
 
+        // Initialize parent contracts
+        __AccessControl_init();
+        __Pausable_init();
+        __ReentrancyGuard_init();
+        __UUPSUpgradeable_init();
+
+        // Initialize state variables (giống constructor cũ)
         token = IERC20(_token);
         principalVault = IPrincipalVault(_principalVault);
         interestVault = IInterestVault(_interestVault);
@@ -204,6 +229,51 @@ contract SavingBankV2 is AccessControl, Pausable, ReentrancyGuard {
         uint256 indexed newDepositId,
         uint256 newPrincipal
     );
+    event TimelockUpdated(address indexed newTimelock);
+    event InterestCalculated(
+        uint256 indexed depositId,
+        uint256 principal,
+        uint256 interest,
+        uint256 timestamp
+    );
+    event PenaltyApplied(
+        uint256 indexed depositId,
+        address indexed user,
+        uint256 penaltyAmount,
+        uint256 penaltyRate,
+        uint256 timestamp
+    );
+    event PlanParametersUpdated(
+        uint256 indexed planId,
+        uint256 oldAPR,
+        uint256 newAPR,
+        uint256 oldTenor,
+        uint256 newTenor,
+        address indexed updatedBy
+    );
+    event EmergencyWithdraw(
+        uint256 indexed depositId,
+        address indexed user,
+        uint256 amount,
+        string reason
+    );
+    event VaultBalanceChanged(
+        address indexed vault,
+        uint256 oldBalance,
+        uint256 newBalance,
+        string operation
+    );
+
+    /*//////////////////////////////////////////////////////////////
+                          MODIFIERS
+    //////////////////////////////////////////////////////////////*/
+
+    modifier onlyTimelockOrAdmin() {
+        if (msg.sender != timelock && !hasRole(ADMIN_ROLE, msg.sender)) {
+            revert OnlyTimelockOrAdmin();
+        }
+        _;
+    }
 
     /*//////////////////////////////////////////////////////////////
                           CORE FUNCTIONS
@@ -269,6 +339,14 @@ contract SavingBankV2 is AccessControl, Pausable, ReentrancyGuard {
         if (block.timestamp < deposit.maturityAt) revert NotMaturedYet();
 
         uint256 interest = _calculateInterest(depositId);
+        uint256 principal = deposit.principal;
+
+        emit InterestCalculated(
+            depositId,
+            principal,
+            principal,
+            block.timestamp
+        );
 
         deposit.status = DepositStatus.Withdrawn;
 
@@ -276,7 +354,7 @@ contract SavingBankV2 is AccessControl, Pausable, ReentrancyGuard {
         interestVault.payInterest(msg.sender, interest);
 
         // Trả gốc từ PrincipalVault
-        principalVault.withdrawPrincipal(msg.sender, deposit.principal);
+        principalVault.withdrawPrincipal(msg.sender, principal);
 
         // Burn NFT
         nft.burn(depositId);
@@ -284,7 +362,7 @@ contract SavingBankV2 is AccessControl, Pausable, ReentrancyGuard {
         emit Withdrawn(
             depositId,
             msg.sender,
-            deposit.principal,
+            principal,
             interest,
             DepositStatus.Withdrawn
         );
@@ -302,6 +380,15 @@ contract SavingBankV2 is AccessControl, Pausable, ReentrancyGuard {
 
         uint256 penalty = (deposit.principal *
             deposit.snapshotEarlyWithdrawPenaltyBps) / BASIS_POINTS;
+
+        emit PenaltyApplied(
+            depositId,
+            msg.sender,
+            penalty,
+            deposit.snapshotEarlyWithdrawPenaltyBps,
+            block.timestamp
+        );
+
         uint256 amountToUser = deposit.principal - penalty;
 
         deposit.status = DepositStatus.EarlyWithdrawn;
@@ -457,7 +544,7 @@ contract SavingBankV2 is AccessControl, Pausable, ReentrancyGuard {
         uint256 minDeposit,
         uint256 maxDeposit,
         uint256 earlyWithdrawPenaltyBps
-    ) external onlyRole(OPERATOR_ROLE) {
+    ) external onlyTimelockOrAdmin {
         if (planId <= 0 || planId >= nextPlanId) revert InvalidPlanId();
         if (tenorDays == 0) revert InvalidTenor();
         if (aprBps == 0) revert InvalidAPR();
@@ -470,11 +557,24 @@ contract SavingBankV2 is AccessControl, Pausable, ReentrancyGuard {
         ) revert NotExceed();
 
         SavingPlan storage plan = savingPlans[planId];
+
+        uint256 oldAPR = plan.aprBps;
+        uint256 oldTenor = plan.tenorDays;
+
         plan.tenorDays = tenorDays;
         plan.aprBps = aprBps;
         plan.minDeposit = minDeposit;
         plan.maxDeposit = maxDeposit;
         plan.earlyWithdrawPenaltyBps = earlyWithdrawPenaltyBps;
+
+        emit PlanParametersUpdated(
+            planId,
+            oldAPR,
+            aprBps,
+            oldTenor,
+            tenorDays,
+            msg.sender
+        );
 
         emit PlanUpdated(planId, plan.enabled);
     }
@@ -486,7 +586,7 @@ contract SavingBankV2 is AccessControl, Pausable, ReentrancyGuard {
     function setVaults(
         address newPrincipalVault,
         address newInterestVault
-    ) external onlyRole(ADMIN_ROLE) {
+    ) external onlyTimelockOrAdmin {
         if (newPrincipalVault == address(0)) revert InvalidVault();
         if (newInterestVault == address(0)) revert InvalidVault();
 
@@ -504,10 +604,20 @@ contract SavingBankV2 is AccessControl, Pausable, ReentrancyGuard {
 
     function setFeeReceiver(
         address newFeeReceiver
-    ) external onlyRole(ADMIN_ROLE) {
+    ) external onlyTimelockOrAdmin {
         if (newFeeReceiver == address(0)) revert InvalidAddress();
         feeReceiver = newFeeReceiver;
         emit FeeReceiverUpdated(newFeeReceiver);
+    }
+
+    /**
+     * @notice Set timelock address
+     * @dev Only ADMIN can set timelock
+     */
+    function setTimelock(address newTimelock) external onlyRole(ADMIN_ROLE) {
+        if (newTimelock == address(0)) revert InvalidTimelock();
+        timelock = newTimelock;
+        emit TimelockUpdated(newTimelock);
     }
 
     function pause() external onlyRole(ADMIN_ROLE) {
@@ -517,6 +627,13 @@ contract SavingBankV2 is AccessControl, Pausable, ReentrancyGuard {
     function unpause() external onlyRole(ADMIN_ROLE) {
         _unpause();
     }
+
+    /**
+     * @notice Override required by UUPSUpgradeable - chỉ ADMIN mới upgrade được
+     */
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyRole(ADMIN_ROLE) {}
 
     /*//////////////////////////////////////////////////////////////
                           VIEW FUNCTIONS
@@ -603,4 +720,14 @@ contract SavingBankV2 is AccessControl, Pausable, ReentrancyGuard {
 
         return interestAmount;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                          STORAGE GAP
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Storage gap for future upgrades
+     * Giảm gap khi thêm state variables mới
+     */
+    uint256[49] private __gap;
 }
