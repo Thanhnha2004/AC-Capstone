@@ -3,17 +3,6 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 
-/**
- * @title SavingBankTimelock
- * @notice Timelock controller for SavingBank upgrade governance
- * @dev Enforces minimum 2-day delay before executing critical operations
- *
- * Key Features:
- * - 2-day minimum delay for all operations
- * - Role-based access (Proposers, Executors, Admin)
- * - Transparent upgrade process
- * - Emergency cancellation capability
- */
 contract SavingBankTimelock is TimelockController {
     /*//////////////////////////////////////////////////////////////
                               CONSTANTS

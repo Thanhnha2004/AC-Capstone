@@ -10,6 +10,11 @@
                 "internalType": "address",
                 "name": "_operator",
                 "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "_metadataContract",
+                "type": "address"
             }
         ],
         "stateMutability": "nonpayable",
@@ -146,6 +151,11 @@
     },
     {
         "inputs": [],
+        "name": "InvalidMetadataContract",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "TokenNotExists",
         "type": "error"
     },
@@ -208,25 +218,6 @@
         "anonymous": false,
         "inputs": [
             {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "_fromTokenId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "_toTokenId",
-                "type": "uint256"
-            }
-        ],
-        "name": "BatchMetadataUpdate",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
                 "indexed": true,
                 "internalType": "uint256",
                 "name": "tokenId",
@@ -250,6 +241,18 @@
                 "internalType": "address",
                 "name": "owner",
                 "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "planId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "depositAmount",
+                "type": "uint256"
             }
         ],
         "name": "CertificateMinted",
@@ -259,13 +262,19 @@
         "anonymous": false,
         "inputs": [
             {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "_tokenId",
-                "type": "uint256"
+                "indexed": true,
+                "internalType": "address",
+                "name": "oldContract",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "newContract",
+                "type": "address"
             }
         ],
-        "name": "MetadataUpdate",
+        "name": "MetadataContractUpdated",
         "type": "event"
     },
     {
@@ -498,47 +507,6 @@
     {
         "inputs": [
             {
-                "internalType": "uint256",
-                "name": "tokenId",
-                "type": "uint256"
-            }
-        ],
-        "name": "getCertificateData",
-        "outputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "uint256",
-                        "name": "depositId",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "planId",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "depositAmount",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "depositTime",
-                        "type": "uint256"
-                    }
-                ],
-                "internalType": "struct SavingBankNFT.CertificateData",
-                "name": "",
-                "type": "tuple"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
                 "internalType": "bytes32",
                 "name": "role",
                 "type": "bytes32"
@@ -616,6 +584,19 @@
                 "internalType": "bool",
                 "name": "",
                 "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "metadataContract",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
             }
         ],
         "stateMutability": "view",
@@ -795,6 +776,19 @@
             }
         ],
         "name": "setApprovalForAll",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "_newMetadataContract",
+                "type": "address"
+            }
+        ],
+        "name": "setMetadataContract",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

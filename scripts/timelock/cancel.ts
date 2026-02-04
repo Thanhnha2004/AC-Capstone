@@ -1,51 +1,119 @@
-import { ethers } from "hardhat";
+import { ethers, deployments } from "hardhat";
+import * as fs from "fs";
 
 /**
- * HƯỚNG DẪN NHANH:
- * 1. Điền TIMELOCK_ADDRESS (dòng 11)
- * 2. Mở file proposal-*.json
- * 3. Copy operationHash vào OPERATION_HASH (dòng 12)
- * 4. Điền CANCEL_REASON (dòng 13)
- * 5. Chạy: npx hardhat run scripts/timelock/cancel.ts --network <network>
+ * 🚨 TIMELOCK CANCEL SCRIPT
+ *
+ * HƯỚNG DẪN:
+ * 1. Chạy script này: npx hardhat run scripts/timelock/cancel.ts --network <network>
+ * 2. Script sẽ auto-load proposal mới nhất, hoặc chỉ định file cụ thể
+ *
+ * LƯU Ý: Chỉ account có CANCELLER_ROLE mới có thể hủy operation
  */
 
-const TIMELOCK_ADDRESS = "0x..."; // TODO: Điền địa chỉ Timelock
-const OPERATION_HASH = "0x...";   // TODO: Copy từ proposal JSON
-const CANCEL_REASON = "Emergency: Security concern detected"; // TODO: Lý do hủy
+// ============ CẤU HÌNH ============
+const PROPOSAL_FILE = ""; // Để trống để auto-load, hoặc chỉ định file: "proposal-1234567890.json"
+const CANCEL_REASON = "Emergency: Security vulnerability detected"; // Lý do hủy
 
 async function main() {
   console.log("🚨 Timelock Cancel Script\n");
-  console.log("⚠️  WARNING: This will CANCEL a pending operation");
-  console.log("⚠️  Reason:", CANCEL_REASON, "\n");
 
   const [canceller] = await ethers.getSigners();
   console.log("👤 Canceller:", canceller.address);
 
+  // Get timelock address from deployment
+  let TIMELOCK_ADDRESS = process.env.TIMELOCK_ADDRESS || "";
+
+  if (!TIMELOCK_ADDRESS) {
+    try {
+      const timelockDeployment = await deployments.get("SavingBankTimelock");
+      TIMELOCK_ADDRESS = timelockDeployment.address;
+      console.log("✅ Timelock address from deployment:", TIMELOCK_ADDRESS);
+    } catch {
+      throw new Error(
+        "❌ Timelock address not found! Deploy it first or set TIMELOCK_ADDRESS in .env",
+      );
+    }
+  }
+
   const timelock = await ethers.getContractAt(
     "SavingBankTimelock",
-    TIMELOCK_ADDRESS
+    TIMELOCK_ADDRESS,
   );
 
   console.log("🔗 Timelock:", await timelock.getAddress());
-  console.log("🔐 Operation Hash:", OPERATION_HASH, "\n");
+  console.log();
 
-  // Check canceller role
+  // ============ CHECK CANCELLER ROLE ============
+  console.log("🔐 Verifying permissions...");
+
   const CANCELLER_ROLE = await timelock.CANCELLER_ROLE();
   const hasRole = await timelock.hasRole(CANCELLER_ROLE, canceller.address);
+
   if (!hasRole) {
     throw new Error("❌ Account does not have CANCELLER_ROLE");
   }
-  console.log("✅ Canceller role verified\n");
 
-  // Check operation status
-  const isPending = await timelock.isOperationPending(OPERATION_HASH);
-  const isReady = await timelock.isOperationReady(OPERATION_HASH);
-  const isDone = await timelock.isOperationDone(OPERATION_HASH);
+  console.log("✅ CANCELLER_ROLE verified\n");
 
-  console.log("📊 Operation Status:");
-  console.log("  - Pending:", isPending);
-  console.log("  - Ready:", isReady);
-  console.log("  - Done:", isDone, "\n");
+  // ============ LOAD PROPOSAL DATA ============
+  const PROPOSALS_DIR = "./proposals";
+  const CANCELLATIONS_DIR = "./cancellations";
+
+  // Tạo thư mục nếu chưa có
+  if (!fs.existsSync(CANCELLATIONS_DIR)) {
+    fs.mkdirSync(CANCELLATIONS_DIR, { recursive: true });
+  }
+
+  let proposalData: any;
+
+  try {
+    let proposalFile = PROPOSAL_FILE;
+
+    // Auto-find latest proposal file if not specified
+    if (!proposalFile) {
+      const files = fs
+        .readdirSync(PROPOSALS_DIR)
+        .filter((f) => f.startsWith("proposal-") && f.endsWith(".json"))
+        .sort()
+        .reverse();
+
+      if (files.length === 0) {
+        throw new Error("❌ No proposal files found!");
+      }
+
+      proposalFile = files[0];
+      console.log("📂 Auto-loaded latest proposal:", proposalFile);
+    } else {
+      console.log("📂 Loading proposal:", proposalFile);
+    }
+
+    const content = fs.readFileSync(
+      `${PROPOSALS_DIR}/${proposalFile}`,
+      "utf-8",
+    );
+    proposalData = JSON.parse(content);
+
+    console.log("✅ Proposal data loaded");
+    console.log("📝 Description:", proposalData.description);
+    console.log("🔐 Operation Hash:", proposalData.operationHash);
+    console.log();
+  } catch (error: any) {
+    throw new Error(`❌ Failed to load proposal file: ${error.message}`);
+  }
+
+  // ============ CHECK OPERATION STATUS ============
+  console.log("📊 Checking operation status...");
+
+  const operationHash = proposalData.operationHash;
+  const isPending = await timelock.isOperationPending(operationHash);
+  const isReady = await timelock.isOperationReady(operationHash);
+  const isDone = await timelock.isOperationDone(operationHash);
+
+  console.log("  - Pending:", isPending ? "✅" : "❌");
+  console.log("  - Ready:", isReady ? "✅" : "❌");
+  console.log("  - Done:", isDone ? "✅" : "❌");
+  console.log();
 
   if (isDone) {
     throw new Error("❌ Operation already executed - cannot cancel");
@@ -55,73 +123,100 @@ async function main() {
     throw new Error("❌ Operation not found - nothing to cancel");
   }
 
-  // Show operation info
+  // ============ SHOW OPERATION DETAILS ============
   if (isPending || isReady) {
-    const timestamp = await timelock.getTimestamp(OPERATION_HASH);
+    const timestamp = await timelock.getTimestamp(operationHash);
     const currentBlock = await ethers.provider.getBlock("latest");
     const currentTimestamp = currentBlock!.timestamp;
 
-    console.log("⏰ Operation Info:");
-    console.log("  Scheduled for:", new Date(Number(timestamp) * 1000).toLocaleString());
-    console.log("  Current time:", new Date(currentTimestamp * 1000).toLocaleString());
+    console.log("⏰ Operation Information:");
+    console.log("  Description:", proposalData.description);
+    console.log(
+      "  Scheduled For:",
+      new Date(Number(timestamp) * 1000).toLocaleString(),
+    );
+    console.log(
+      "  Current Time:",
+      new Date(currentTimestamp * 1000).toLocaleString(),
+    );
 
     if (isReady) {
-      console.log("  Status: Ready to execute (delay passed)");
+      console.log("  Status: ⚠️  READY TO EXECUTE (delay has passed)");
+      console.log("  ⚡ Can be executed by anyone at any time!");
     } else {
       const remainingTime = Number(timestamp) - currentTimestamp;
-      console.log("  Status: Pending (waiting", Math.floor(remainingTime / 3600), "hours)");
+      const hoursLeft = Math.floor(remainingTime / 3600);
+      const minutesLeft = Math.floor((remainingTime % 3600) / 60);
+      console.log(
+        `  Status: ⏳ PENDING (${hoursLeft}h ${minutesLeft}m remaining)`,
+      );
     }
     console.log();
   }
 
-  // Confirmation
-  console.log("⚠️  ============ CONFIRMATION ============");
+  // ============ CONFIRMATION ============
+  console.log("⚠️  " + "=".repeat(54));
+  console.log("⚠️  CONFIRMATION - READ CAREFULLY");
+  console.log("⚠️  " + "=".repeat(54));
   console.log("You are about to CANCEL this operation:");
-  console.log("Operation Hash:", OPERATION_HASH);
-  console.log("Reason:", CANCEL_REASON);
-  console.log("\n⚠️  This action CANNOT be undone.");
-  console.log("⏸️  Waiting 5 seconds before proceeding...\n");
+  console.log("  Description:", proposalData.description);
+  console.log("  Operation Hash:", proposalData.operationHash);
+  console.log("  Cancellation Reason:", CANCEL_REASON);
+  console.log("\n⚠️  This action CANNOT be undone!");
+  console.log("⚠️  The proposal will need to be re-submitted from scratch!");
+  console.log("\n⏸️  Waiting 5 seconds before proceeding...\n");
 
-  await new Promise(resolve => setTimeout(resolve, 5000));
+  await new Promise((resolve) => setTimeout(resolve, 5000));
 
-  // Cancel operation
+  // ============ CANCEL OPERATION ============
   console.log("🚫 Cancelling operation...");
 
-  const tx = await timelock.cancel(OPERATION_HASH);
+  const tx = await timelock.cancel(operationHash);
 
   console.log("📤 Transaction sent:", tx.hash);
+  console.log("⏳ Waiting for confirmation...");
+
   const receipt = await tx.wait();
   console.log("✅ Transaction confirmed in block:", receipt?.blockNumber);
+  console.log();
 
-  // Verify cancellation
-  const isStillPending = await timelock.isOperationPending(OPERATION_HASH);
-  const isStillReady = await timelock.isOperationReady(OPERATION_HASH);
+  // ============ VERIFY CANCELLATION ============
+  const isStillPending = await timelock.isOperationPending(operationHash);
+  const isStillReady = await timelock.isOperationReady(operationHash);
 
   if (isStillPending || isStillReady) {
     throw new Error("❌ Cancellation verification failed");
   }
 
-  console.log("\n🎉 ============ CANCELLATION SUCCESSFUL ============");
-  console.log("Operation Hash:", OPERATION_HASH);
+  // ============ SUCCESS ============
+  console.log("=".repeat(60));
+  console.log("🎉 CANCELLATION SUCCESSFUL!");
+  console.log("=".repeat(60));
+  console.log("Operation Hash:", proposalData.operationHash);
+  console.log("Description:", proposalData.description);
   console.log("Transaction:", tx.hash);
   console.log("Block:", receipt?.blockNumber);
+  console.log("Cancelled By:", canceller.address);
   console.log("Reason:", CANCEL_REASON);
   console.log("✅ Operation cancelled and verified");
+  console.log("=".repeat(60));
+  console.log();
 
-  // Log to file
-  const fs = require("fs");
+  // ============ LOG CANCELLATION ============
   const cancellationLog = {
-    operationHash: OPERATION_HASH,
+    operationHash: proposalData.operationHash,
+    description: proposalData.description,
     reason: CANCEL_REASON,
     cancelledBy: canceller.address,
     txHash: tx.hash,
     blockNumber: receipt?.blockNumber,
     timestamp: new Date().toISOString(),
+    proposalFile: PROPOSAL_FILE || "auto-detected",
   };
 
-  const filename = `cancellation-${Date.now()}.json`;
+  const filename = `${CANCELLATIONS_DIR}/cancellation-${Date.now()}.json`;
   fs.writeFileSync(filename, JSON.stringify(cancellationLog, null, 2));
-  console.log("\n💾 Cancellation logged to:", filename);
+  console.log("💾 Cancellation logged to:", filename);
 }
 
 main()

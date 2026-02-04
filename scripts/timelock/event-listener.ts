@@ -1,20 +1,18 @@
-import { ethers } from "hardhat";
+import { ethers, deployments } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";
 
 /**
  * 🎯 TIMELOCK EVENT LISTENER
- * 
+ *
  * HƯỚNG DẪN SỬ DỤNG:
- * 1. Điền TIMELOCK_ADDRESS (dòng 18)
- * 2. Cấu hình LOG_TO_FILE và LOG_DIR (dòng 19-20)
- * 3. Chạy: npx hardhat run scripts/timelock/event-listener.ts --network <network>
- * 4. Script sẽ chạy liên tục và log tất cả events
- * 5. Nhấn Ctrl+C để dừng
+ * 1. Cấu hình LOG_TO_FILE và LOG_DIR (dòng 17-18)
+ * 2. Chạy: npx hardhat run scripts/timelock/event-listener.ts --network <network>
+ * 3. Script sẽ chạy liên tục và log tất cả events
+ * 4. Nhấn Ctrl+C để dừng
  */
 
 // ============ CẤU HÌNH ============
-const TIMELOCK_ADDRESS = "0x..."; // TODO: Điền địa chỉ Timelock
 const LOG_TO_FILE = true; // true = lưu vào file, false = chỉ console
 const LOG_DIR = "./logs/timelock"; // Thư mục lưu logs
 
@@ -104,20 +102,26 @@ function getTimeUntil(timestamp: bigint): string {
 
 /**
  * Handler cho CallScheduled event
- * Triggered khi operation được schedule
  */
-async function handleCallScheduled(
-  id: string,
-  index: bigint,
-  target: string,
-  value: bigint,
-  data: string,
-  predecessor: string,
-  delay: bigint,
-  event: any
-) {
-  const block = await event.getBlock();
-  const executeTime = block.timestamp + delay;
+async function handleCallScheduled(...args: any[]) {
+  const eventObj = args.find(arg => arg && typeof arg === 'object' && 'log' in arg && 'getBlock' in arg);
+  
+  if (!eventObj) {
+    console.error("❌ Could not find event object in CallScheduled!");
+    return;
+  }
+
+  let id, index, target, value, data, predecessor, delay;
+  
+  if (eventObj.args && Array.isArray(eventObj.args)) {
+    [id, index, target, value, data, predecessor, delay] = eventObj.args;
+  } else {
+    const eventIndex = args.indexOf(eventObj);
+    [id, index, target, value, data, predecessor, delay] = args.slice(0, eventIndex);
+  }
+
+  const block = await eventObj.getBlock();
+  const executeTime = BigInt(block.timestamp) + BigInt(delay);
 
   console.log("\n📅 ============ OPERATION SCHEDULED ============");
   console.log("Operation Hash:", id);
@@ -127,18 +131,18 @@ async function handleCallScheduled(
   console.log("Data Length:", data.length, "bytes");
   console.log("Predecessor:", predecessor);
   console.log("Delay:", Number(delay) / 86400, "days");
-  console.log("─────────────────────────────────────────────");
-  console.log("Scheduled At:", formatTimestamp(block.timestamp));
+  console.log("─".repeat(45));
+  console.log("Scheduled At:", formatTimestamp(BigInt(block.timestamp)));
   console.log("Execute After:", formatTimestamp(executeTime));
   console.log("Time Until:", getTimeUntil(executeTime));
   console.log("Block:", block.number);
-  console.log("Transaction:", event.log.transactionHash);
+  console.log("Transaction:", eventObj.log.transactionHash);
   console.log("===============================================\n");
 
   const eventLog: EventLog = {
     timestamp: new Date().toISOString(),
     blockNumber: block.number,
-    txHash: event.log.transactionHash,
+    txHash: eventObj.log.transactionHash,
     event: "CallScheduled",
     args: {
       operationHash: id,
@@ -154,7 +158,6 @@ async function handleCallScheduled(
 
   writeLogToFile(eventLog);
 
-  // Save operation data for easy execution
   if (LOG_TO_FILE) {
     const operationData: OperationData = {
       operationHash: id,
@@ -173,17 +176,25 @@ async function handleCallScheduled(
 
 /**
  * Handler cho CallExecuted event
- * Triggered khi operation được execute thành công
  */
-async function handleCallExecuted(
-  id: string,
-  index: bigint,
-  target: string,
-  value: bigint,
-  data: string,
-  event: any
-) {
-  const block = await event.getBlock();
+async function handleCallExecuted(...args: any[]) {
+  const eventObj = args.find(arg => arg && typeof arg === 'object' && 'log' in arg && 'getBlock' in arg);
+  
+  if (!eventObj) {
+    console.error("❌ Could not find event object in CallExecuted!");
+    return;
+  }
+
+  let id, index, target, value, data;
+  
+  if (eventObj.args && Array.isArray(eventObj.args)) {
+    [id, index, target, value, data] = eventObj.args;
+  } else {
+    const eventIndex = args.indexOf(eventObj);
+    [id, index, target, value, data] = args.slice(0, eventIndex);
+  }
+
+  const block = await eventObj.getBlock();
 
   console.log("\n✅ ============ OPERATION EXECUTED ============");
   console.log("Operation Hash:", id);
@@ -191,16 +202,16 @@ async function handleCallExecuted(
   console.log("Target:", target, `(${shortAddress(target)})`);
   console.log("Value:", ethers.formatEther(value), "ETH");
   console.log("Data Length:", data.length, "bytes");
-  console.log("─────────────────────────────────────────────");
-  console.log("Executed At:", formatTimestamp(block.timestamp));
+  console.log("─".repeat(45));
+  console.log("Executed At:", formatTimestamp(BigInt(block.timestamp)));
   console.log("Block:", block.number);
-  console.log("Transaction:", event.log.transactionHash);
+  console.log("Transaction:", eventObj.log.transactionHash);
   console.log("===============================================\n");
 
   const eventLog: EventLog = {
     timestamp: new Date().toISOString(),
     blockNumber: block.number,
-    txHash: event.log.transactionHash,
+    txHash: eventObj.log.transactionHash,
     event: "CallExecuted",
     args: {
       operationHash: id,
@@ -216,22 +227,36 @@ async function handleCallExecuted(
 
 /**
  * Handler cho Cancelled event
- * Triggered khi operation bị cancel
  */
-async function handleCancelled(id: string, event: any) {
-  const block = await event.getBlock();
+async function handleCancelled(...args: any[]) {
+  const eventObj = args.find(arg => arg && typeof arg === 'object' && 'log' in arg && 'getBlock' in arg);
+  
+  if (!eventObj) {
+    console.error("❌ Could not find event object in Cancelled!");
+    return;
+  }
+
+  let id;
+  if (eventObj.args && Array.isArray(eventObj.args)) {
+    [id] = eventObj.args;
+  } else {
+    const eventIndex = args.indexOf(eventObj);
+    [id] = args.slice(0, eventIndex);
+  }
+
+  const block = await eventObj.getBlock();
 
   console.log("\n🚫 ============ OPERATION CANCELLED ============");
   console.log("Operation Hash:", id);
-  console.log("Cancelled At:", formatTimestamp(block.timestamp));
+  console.log("Cancelled At:", formatTimestamp(BigInt(block.timestamp)));
   console.log("Block:", block.number);
-  console.log("Transaction:", event.log.transactionHash);
+  console.log("Transaction:", eventObj.log.transactionHash);
   console.log("===============================================\n");
 
   const eventLog: EventLog = {
     timestamp: new Date().toISOString(),
     blockNumber: block.number,
-    txHash: event.log.transactionHash,
+    txHash: eventObj.log.transactionHash,
     event: "Cancelled",
     args: {
       operationHash: id,
@@ -243,27 +268,37 @@ async function handleCancelled(id: string, event: any) {
 
 /**
  * Handler cho MinDelayChange event
- * Triggered khi min delay được thay đổi
  */
-async function handleMinDelayChange(
-  oldDuration: bigint,
-  newDuration: bigint,
-  event: any
-) {
-  const block = await event.getBlock();
+async function handleMinDelayChange(...args: any[]) {
+  const eventObj = args.find(arg => arg && typeof arg === 'object' && 'log' in arg && 'getBlock' in arg);
+  
+  if (!eventObj) {
+    console.error("❌ Could not find event object in MinDelayChange!");
+    return;
+  }
+
+  let oldDuration, newDuration;
+  if (eventObj.args && Array.isArray(eventObj.args)) {
+    [oldDuration, newDuration] = eventObj.args;
+  } else {
+    const eventIndex = args.indexOf(eventObj);
+    [oldDuration, newDuration] = args.slice(0, eventIndex);
+  }
+
+  const block = await eventObj.getBlock();
 
   console.log("\n⏰ ============ MIN DELAY CHANGED ============");
   console.log("Old Delay:", Number(oldDuration) / 86400, "days");
   console.log("New Delay:", Number(newDuration) / 86400, "days");
-  console.log("Changed At:", formatTimestamp(block.timestamp));
+  console.log("Changed At:", formatTimestamp(BigInt(block.timestamp)));
   console.log("Block:", block.number);
-  console.log("Transaction:", event.log.transactionHash);
+  console.log("Transaction:", eventObj.log.transactionHash);
   console.log("===============================================\n");
 
   const eventLog: EventLog = {
     timestamp: new Date().toISOString(),
     blockNumber: block.number,
-    txHash: event.log.transactionHash,
+    txHash: eventObj.log.transactionHash,
     event: "MinDelayChange",
     args: {
       oldDuration: oldDuration.toString(),
@@ -276,17 +311,25 @@ async function handleMinDelayChange(
 
 /**
  * Handler cho RoleGranted event
- * Triggered khi role được grant
  */
-async function handleRoleGranted(
-  role: string,
-  account: string,
-  sender: string,
-  event: any
-) {
-  const block = await event.getBlock();
+async function handleRoleGranted(...args: any[]) {
+  const eventObj = args.find(arg => arg && typeof arg === 'object' && 'log' in arg && 'getBlock' in arg);
+  
+  if (!eventObj) {
+    console.error("❌ Could not find event object in RoleGranted!");
+    return;
+  }
 
-  // Decode role name
+  let role, account, sender;
+  if (eventObj.args && Array.isArray(eventObj.args)) {
+    [role, account, sender] = eventObj.args;
+  } else {
+    const eventIndex = args.indexOf(eventObj);
+    [role, account, sender] = args.slice(0, eventIndex);
+  }
+
+  const block = await eventObj.getBlock();
+
   let roleName = "UNKNOWN_ROLE";
   if (role === ethers.id("PROPOSER_ROLE")) roleName = "PROPOSER_ROLE";
   else if (role === ethers.id("EXECUTOR_ROLE")) roleName = "EXECUTOR_ROLE";
@@ -297,15 +340,15 @@ async function handleRoleGranted(
   console.log("Role:", roleName);
   console.log("Account:", account, `(${shortAddress(account)})`);
   console.log("Granted By:", sender, `(${shortAddress(sender)})`);
-  console.log("Granted At:", formatTimestamp(block.timestamp));
+  console.log("Granted At:", formatTimestamp(BigInt(block.timestamp)));
   console.log("Block:", block.number);
-  console.log("Transaction:", event.log.transactionHash);
+  console.log("Transaction:", eventObj.log.transactionHash);
   console.log("===============================================\n");
 
   const eventLog: EventLog = {
     timestamp: new Date().toISOString(),
     blockNumber: block.number,
-    txHash: event.log.transactionHash,
+    txHash: eventObj.log.transactionHash,
     event: "RoleGranted",
     args: {
       role,
@@ -320,17 +363,25 @@ async function handleRoleGranted(
 
 /**
  * Handler cho RoleRevoked event
- * Triggered khi role bị revoke
  */
-async function handleRoleRevoked(
-  role: string,
-  account: string,
-  sender: string,
-  event: any
-) {
-  const block = await event.getBlock();
+async function handleRoleRevoked(...args: any[]) {
+  const eventObj = args.find(arg => arg && typeof arg === 'object' && 'log' in arg && 'getBlock' in arg);
+  
+  if (!eventObj) {
+    console.error("❌ Could not find event object in RoleRevoked!");
+    return;
+  }
 
-  // Decode role name
+  let role, account, sender;
+  if (eventObj.args && Array.isArray(eventObj.args)) {
+    [role, account, sender] = eventObj.args;
+  } else {
+    const eventIndex = args.indexOf(eventObj);
+    [role, account, sender] = args.slice(0, eventIndex);
+  }
+
+  const block = await eventObj.getBlock();
+
   let roleName = "UNKNOWN_ROLE";
   if (role === ethers.id("PROPOSER_ROLE")) roleName = "PROPOSER_ROLE";
   else if (role === ethers.id("EXECUTOR_ROLE")) roleName = "EXECUTOR_ROLE";
@@ -341,15 +392,15 @@ async function handleRoleRevoked(
   console.log("Role:", roleName);
   console.log("Account:", account, `(${shortAddress(account)})`);
   console.log("Revoked By:", sender, `(${shortAddress(sender)})`);
-  console.log("Revoked At:", formatTimestamp(block.timestamp));
+  console.log("Revoked At:", formatTimestamp(BigInt(block.timestamp)));
   console.log("Block:", block.number);
-  console.log("Transaction:", event.log.transactionHash);
+  console.log("Transaction:", eventObj.log.transactionHash);
   console.log("===============================================\n");
 
   const eventLog: EventLog = {
     timestamp: new Date().toISOString(),
     blockNumber: block.number,
-    txHash: event.log.transactionHash,
+    txHash: eventObj.log.transactionHash,
     event: "RoleRevoked",
     args: {
       role,
@@ -367,19 +418,29 @@ async function handleRoleRevoked(
 async function main() {
   console.log("🎧 ============ TIMELOCK EVENT LISTENER ============\n");
 
-  // Validate config
-  if (TIMELOCK_ADDRESS === "0x...") {
-    throw new Error("❌ Please configure TIMELOCK_ADDRESS first!");
-  }
-
   ensureLogDirectory();
 
   const [signer] = await ethers.getSigners();
   console.log("👤 Listener:", signer.address);
 
+  // Get timelock address from deployment
+  let TIMELOCK_ADDRESS = process.env.TIMELOCK_ADDRESS || "";
+
+  if (!TIMELOCK_ADDRESS) {
+    try {
+      const timelockDeployment = await deployments.get("SavingBankTimelock");
+      TIMELOCK_ADDRESS = timelockDeployment.address;
+      console.log("✅ Timelock address from deployment:", TIMELOCK_ADDRESS);
+    } catch {
+      throw new Error(
+        "Timelock address not found! Deploy it first or set TIMELOCK_ADDRESS in .env",
+      );
+    }
+  }
+
   const timelock = await ethers.getContractAt(
     "SavingBankTimelock",
-    TIMELOCK_ADDRESS
+    TIMELOCK_ADDRESS,
   );
 
   console.log("🔗 Timelock:", await timelock.getAddress());
@@ -387,38 +448,15 @@ async function main() {
   console.log("📁 Log Dir:", LOG_TO_FILE ? LOG_DIR : "Console only");
   console.log("🌐 Network:", (await ethers.provider.getNetwork()).name);
   console.log("\n✅ Listening for events... (Press Ctrl+C to stop)\n");
-  console.log("═══════════════════════════════════════════════════\n");
+  console.log("╔" + "═".repeat(58) + "╗\n");
 
   // Listen to all events
-  timelock.on(
-    timelock.filters.CallScheduled(),
-    handleCallScheduled
-  );
-
-  timelock.on(
-    timelock.filters.CallExecuted(),
-    handleCallExecuted
-  );
-
-  timelock.on(
-    timelock.filters.Cancelled(),
-    handleCancelled
-  );
-
-  timelock.on(
-    timelock.filters.MinDelayChange(),
-    handleMinDelayChange
-  );
-
-  timelock.on(
-    timelock.filters.RoleGranted(),
-    handleRoleGranted
-  );
-
-  timelock.on(
-    timelock.filters.RoleRevoked(),
-    handleRoleRevoked
-  );
+  timelock.on("CallScheduled", handleCallScheduled);
+  timelock.on("CallExecuted", handleCallExecuted);
+  timelock.on("Cancelled", handleCancelled);
+  timelock.on("MinDelayChange", handleMinDelayChange);
+  timelock.on("RoleGranted", handleRoleGranted);
+  timelock.on("RoleRevoked", handleRoleRevoked);
 
   // Keep the script running
   await new Promise(() => {});

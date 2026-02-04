@@ -1,0 +1,10 @@
+{
+  "operationHash": "0xe2f73888cebcc0365fdbdc9ca94319c4b45bf2d3e2686bbf1453fcd364333499",
+  "description": "Update Plan 1 - 6 months, 12% APR",
+  "reason": "Emergency: Security vulnerability detected",
+  "cancelledBy": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "txHash": "0xc09a03ef8d880e5f792c1b02a6b7c2e937c50821940aadb221701034cf2e25e2",
+  "blockNumber": 109,
+  "timestamp": "2026-02-04T03:14:57.407Z",
+  "proposalFile": "auto-detected"
+}

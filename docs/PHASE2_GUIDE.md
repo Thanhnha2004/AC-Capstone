@@ -28,6 +28,8 @@ Phase 2 tập trung vào **Upgradeable Pattern** và **Timelock Governance** - 2
 - [✅] Deploy script: `06_savingbank_upgradeable_deploy.ts`
 - [✅] Upgrade script: `scripts/upgrade/upgrade_savingbank.ts`
 - [✅] **TODO**: Test file: `test/upgrade/SavingBank.upgrade.test.ts`
+  - Test state preservation
+  - Test old functions work
 
 #### 1.2 Convert Vaults ✅
 
@@ -35,6 +37,7 @@ Phase 2 tập trung vào **Upgradeable Pattern** và **Timelock Governance** - 2
 - [✅] `InterestVaultUpgradeable.sol`
 - [✅] Deploy script: `07_vaults_upgradeable_deploy.ts`
 - [✅] **TODO**: Test file: `test/upgrade/VaultsUpgrade.test.ts`
+  - Test state preservation
 
 #### 1.3 NFT with Separate Metadata ✅
 
@@ -42,6 +45,7 @@ Phase 2 tập trung vào **Upgradeable Pattern** và **Timelock Governance** - 2
 - [✅] `NFTMetadataUpgradeable.sol` (upgradeable metadata)
 - [✅] **TODO**: Deploy script: `08_nft_separate_metadata_deploy.ts`
 - [✅] **TODO**: Test file: `test/upgrade/NFTMetadata.upgrade.test.ts`
+  - Test metadata preservation
 
 ---
 
@@ -68,28 +72,6 @@ Phase 2 tập trung vào **Upgradeable Pattern** và **Timelock Governance** - 2
 
 ---
 
-### 3. Testing & Documentation (Tuần 3)
-
-#### 3.1 Must-Have Tests
-
-- [ ] **TODO**: `test/upgrade/SavingBank.upgrade.test.ts`
-  - Test state preservation
-  - Test old functions work
-- [ ] **TODO**: `test/upgrade/VaultsUpgrade.test.ts`
-
-  - Test state preservation
-
-- [ ] **TODO**: `test/upgrade/NFTMetadata.upgrade.test.ts`
-  - Test metadata preservation
-
-#### 3.2 Basic Documentation
-
-- [ ] **TODO**: `docs/UPGRADE_GUIDE.md` - Hướng dẫn upgrade
-- [ ] **TODO**: `docs/TIMELOCK_GUIDE.md` - Hướng dẫn dùng Timelock
-- [ ] **TODO**: Update README.md
-
----
-
 ## ✅ Simplified File Structure
 
 ```
@@ -104,7 +86,7 @@ contracts/
 deploy/
 ├── 06_savingbank_upgradeable_deploy.ts ✅
 ├── 07_vaults_upgradeable_deploy.ts     ✅
-├── 08_nft_separate_metadata_deploy.ts  ❌ TODO
+├── 08_nft_separate_metadata_deploy.ts  ✅
 └── 08_timelock_deploy.ts               ✅
 
 scripts/
@@ -114,19 +96,19 @@ scripts/
     ├── propose.ts                      ✅
     ├── execute.ts                      ✅
     ├── cancel.ts                       ✅
-    └── event-listener.ts               ❌ TODO
+    └── event-listener.ts               ✅
 
 test/
 ├── upgrade/
-│   ├── SavingBank.upgrade.test.ts      ❌ TODO
-│   ├── VaultsUpgrade.test.ts           ❌ TODO
-│   └── NFTMetadata.upgrade.test.ts     ❌ TODO
+│   ├── SavingBank.upgrade.test.ts      ✅
+│   ├── VaultsUpgrade.test.ts           ✅
+│   └── NFTMetadata.upgrade.test.ts     ✅
 └── governance/
     └── Timelock.test.ts                ✅
 
 docs/
-├── UPGRADE_GUIDE.md                    ❌ TODO
-└── TIMELOCK_GUIDE.md                   ❌ TODO
+├── UPGRADE_GUIDE.md                    ✅
+└── TIMELOCK_GUIDE.md                   ✅
 ```
 
 ---
@@ -149,45 +131,21 @@ docs/
 
 ### 🔴 High Priority (Làm ngay)
 
-1. [ ] Fix NFT deploy script (`08_nft_separate_metadata_deploy.ts`)
-2. [ ] Create upgrade tests (`SavingBank.upgrade.test.ts`)
-3. [ ] Create upgrade tests (`VaultsUpgrade.test.ts`)
+1. [✅] Fix NFT deploy script (`08_nft_separate_metadata_deploy.ts`)
+2. [✅] Create upgrade tests (`SavingBank.upgrade.test.ts`)
+3. [✅] Create upgrade tests (`VaultsUpgrade.test.ts`)
 
 ### 🟡 Medium Priority (Tuần tới)
 
-4. [ ] Create NFT metadata test (`NFTMetadata.upgrade.test.ts`)
-5. [ ] Create event listener script
-6. [ ] Write `UPGRADE_GUIDE.md`
+4. [✅] Create NFT metadata test (`NFTMetadata.upgrade.test.ts`)
+5. [✅] Create event listener script
+6. [✅] Write `UPGRADE_GUIDE.md`
 
 ### 🟢 Low Priority (Có thể bỏ qua)
 
-7. [ ] Write `TIMELOCK_GUIDE.md`
-8. [ ] Integration tests
-9. [ ] Transfer admin roles
-
----
-
-## 🚀 Quick Start Checklist
-
-### Để hoàn thành Phase 2:
-
-**Week 1:**
-
-- [ ] Create 3 upgrade test files
-- [ ] Fix NFT deployment script
-- [ ] Test deploy on localhost
-
-**Week 2:**
-
-- [ ] Create event listener
-- [ ] Write basic docs
-- [ ] Deploy to Sepolia testnet
-
-**Week 3 (Optional):**
-
-- [ ] Security review
-- [ ] Gas optimization
-- [ ] Final documentation
+7. [✅] Write `TIMELOCK_GUIDE.md`
+8. [✅] Integration tests
+9. [✅] Transfer admin roles
 
 ---
 
@@ -227,20 +185,6 @@ docs/
 **Problem**: 3 upgrade test files missing
 
 **Fix**: Copy template from `Timelock.test.ts` and adapt
-
----
-
-## 📝 Simplified Success Criteria
-
-Phase 2 hoàn thành khi:
-
-1. ✅ Tất cả contracts upgradeable hoạt động
-2. ✅ Timelock hoạt động với propose/execute/cancel
-3. ⚠️ Có ít nhất 3 upgrade test files (coverage ≥75%)
-4. ⚠️ Có basic documentation (UPGRADE_GUIDE.md)
-5. ⚠️ Deploy thành công lên testnet
-
-**Current Status**: 62% complete - cần 1-2 tuần nữa
 
 ---
 

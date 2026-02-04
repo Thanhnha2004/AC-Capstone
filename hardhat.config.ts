@@ -44,9 +44,9 @@ const config: HardhatUserConfig = {
     sepolia: {
       url: "https://eth-sepolia.g.alchemy.com/v2/YnyRV2BOccnDHMx83D3b9",
       chainId: 11155111,
-      accounts: testnetPrivateKey 
-        ? user1PrivateKey 
-          ? [testnetPrivateKey, user1PrivateKey]  // deployer + user1
+      accounts: testnetPrivateKey
+        ? user1PrivateKey
+          ? [testnetPrivateKey, user1PrivateKey] // deployer + user1
           : [testnetPrivateKey]
         : [],
       timeout: 40000,
@@ -99,13 +99,18 @@ const config: HardhatUserConfig = {
       localhost: 0,
       sepolia: 0,
     },
+    admin: {
+      default: 0,
+      localhost: 0,
+      sepolia: 0,
+    },
     operator: {
-      default: 0, // Same as deployer by default
+      default: 0,
       localhost: 0,
       sepolia: 0,
     },
     feeReceiver: {
-      default: 0, // Same as deployer by default
+      default: 0,
       localhost: 0,
       sepolia: 0,
     },

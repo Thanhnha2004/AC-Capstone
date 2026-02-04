@@ -10,14 +10,14 @@ async function main() {
   const [deployer] = await ethers.getSigners();
   
   const tokenDeployment = await deployments.get("ERC20Mock");
-  const principalVaultDeployment = await deployments.get("PrincipalVault");
-  const interestVaultDeployment = await deployments.get("InterestVault");
-  const savingBankDeployment = await deployments.get("SavingBankV2");
+  const principalVaultDeployment = await deployments.get("PrincipalVaultUpgradeable");
+  const interestVaultDeployment = await deployments.get("InterestVaultUpgradeable");
+  const savingBankDeployment = await deployments.get("SavingBankUpgradeable");
   
   const token = await ethers.getContractAt("ERC20Mock", tokenDeployment.address);
-  const principalVault = await ethers.getContractAt("PrincipalVault", principalVaultDeployment.address);
-  const interestVault = await ethers.getContractAt("InterestVault", interestVaultDeployment.address);
-  const savingBank = await ethers.getContractAt("SavingBankV2", savingBankDeployment.address);
+  const principalVault = await ethers.getContractAt("PrincipalVaultUpgradeable", principalVaultDeployment.address);
+  const interestVault = await ethers.getContractAt("InterestVaultUpgradeable", interestVaultDeployment.address);
+  const savingBank = await ethers.getContractAt("SavingBankUpgradeable", savingBankDeployment.address);
 
   console.log("Admin:", deployer.address);
   console.log();
@@ -27,12 +27,12 @@ async function main() {
   const principalBalance = await principalVault.getBalance();
   const interestBalance = await interestVault.getBalance();
   console.log(
-    "  PrincipalVault:",
+    "  PrincipalVaultUpgradeable:",
     ethers.formatEther(principalBalance),
     "tokens",
   );
   console.log(
-    "  InterestVault:",
+    "  InterestVaultUpgradeable:",
     ethers.formatEther(interestBalance),
     "tokens",
   );
@@ -126,14 +126,14 @@ async function main() {
   console.log("  ✅ SavingBank unpaused");
   console.log();
 
-  // 5. Fund management - Add funds to InterestVault
+  // 5. Fund management - Add funds to InterestVaultUpgradeable
   console.log("💰 Testing Vault Fund Management:");
   const additionalFund = ethers.parseEther("10000");
 
   console.log(
     "  Adding",
     ethers.formatEther(additionalFund),
-    "tokens to InterestVault...",
+    "tokens to InterestVaultUpgradeable...",
   );
   const tx6 = await token.approve(interestVaultDeployment.address, additionalFund);
   await tx6.wait();
@@ -142,7 +142,7 @@ async function main() {
 
   const newInterestBalance = await interestVault.getBalance();
   console.log(
-    "  ✅ InterestVault new balance:",
+    "  ✅ InterestVaultUpgradeable new balance:",
     ethers.formatEther(newInterestBalance),
     "tokens",
   );
@@ -155,12 +155,12 @@ async function main() {
   console.log("  Total Plans Created:", (nextPlanId - 1n).toString());
   console.log("  Total Deposits Created:", (nextDepositId - 1n).toString());
   console.log(
-    "  PrincipalVault Balance:",
+    "  PrincipalVaultUpgradeable Balance:",
     ethers.formatEther(principalBalance),
     "tokens",
   );
   console.log(
-    "  InterestVault Balance:",
+    "  InterestVaultUpgradeable Balance:",
     ethers.formatEther(newInterestBalance),
     "tokens",
   );

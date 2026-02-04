@@ -12,7 +12,7 @@ async function main() {
 
   const tokenDeployment = await deployments.get("ERC20Mock");
   const nftDeployment = await deployments.get("SavingBankNFT");
-  const savingBankDeployment = await deployments.get("SavingBankV2");
+  const savingBankDeployment = await deployments.get("SavingBankUpgradeable");
 
   const token = await ethers.getContractAt(
     "ERC20Mock",
@@ -23,7 +23,7 @@ async function main() {
     nftDeployment.address,
   );
   const savingBank = await ethers.getContractAt(
-    "SavingBankV2",
+    "SavingBankUpgradeable",
     savingBankDeployment.address,
   );
 

@@ -153,7 +153,8 @@ contract SavingBankUpgradeable is
         address _nft,
         address _feeReceiver,
         address _admin,
-        address _operator
+        address _operator,
+        address _timelock
     ) public initializer {
         // Validation (giữ nguyên như constructor cũ)
         if (_token == address(0)) revert InvalidToken();
@@ -163,6 +164,7 @@ contract SavingBankUpgradeable is
         if (_feeReceiver == address(0)) revert InvalidAddress();
         if (_admin == address(0)) revert InvalidAddress();
         if (_operator == address(0)) revert InvalidAddress();
+        if (_timelock == address(0)) revert InvalidTimelock();
 
         // Initialize parent contracts
         __AccessControl_init();
@@ -176,6 +178,7 @@ contract SavingBankUpgradeable is
         interestVault = IInterestVault(_interestVault);
         nft = ISavingBankNFT(_nft);
         feeReceiver = _feeReceiver;
+        timelock = _timelock;
 
         nextPlanId = 1;
         nextDepositId = 1;

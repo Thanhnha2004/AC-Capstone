@@ -10,10 +10,10 @@ async function main() {
   const [deployer, user1] = await ethers.getSigners();
   
   const nftDeployment = await deployments.get("SavingBankNFT");
-  const savingBankDeployment = await deployments.get("SavingBankV2");
+  const savingBankDeployment = await deployments.get("SavingBankUpgradeable");
   
   const nft = await ethers.getContractAt("SavingBankNFT", nftDeployment.address);
-  const savingBank = await ethers.getContractAt("SavingBankV2", savingBankDeployment.address);
+  const savingBank = await ethers.getContractAt("SavingBankUpgradeable", savingBankDeployment.address);
 
   const user = user1 || deployer;
   console.log("User:", user.address);

@@ -1,104 +1,76 @@
-// test/NFTSeparateMetadata.test.ts
-import { expect } from "chai";
-import { ethers, upgrades } from "hardhat";
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import { ethers, upgrades, run } from "hardhat";
 
-describe("NFT with Separate Metadata", function () {
-  async function deployFixture() {
-    const [admin, operator, user1] = await ethers.getSigners();
+async function main() {
+  console.log("Starting NFT Metadata upgrade...");
 
-    // Deploy Metadata (Upgradeable)
-    const NFTMetadata = await ethers.getContractFactory("NFTMetadataUpgradeable");
-    const metadataProxy = await upgrades.deployProxy(
-      NFTMetadata,
-      [admin.address, admin.address],
-      { initializer: "initialize", kind: "uups" }
-    );
-    await metadataProxy.waitForDeployment();
-    const metadataAddress = await metadataProxy.getAddress();
-
-    // Deploy NFT (Non-Upgradeable)
-    const SavingBankNFT = await ethers.getContractFactory("SavingBankNFT");
-    const nft = await SavingBankNFT.deploy(
-      admin.address,
-      operator.address,
-      metadataAddress
-    );
-    await nft.waitForDeployment();
-    const nftAddress = await nft.getAddress();
-
-    // Update metadata with NFT address
-    await metadataProxy.setNFTContract(nftAddress);
-
-    // Set SavingBank to admin for testing
-    await nft.connect(admin).setSavingBank(admin.address);
-
-    return { nft, metadataProxy, admin, operator, user1, metadataAddress };
+  const PROXY_ADDRESS = process.env.METADATA_PROXY_ADDRESS || "";
+  if (!PROXY_ADDRESS) {
+    throw new Error("Please set METADATA_PROXY_ADDRESS in .env");
   }
 
-  describe("Metadata Upgrade", function () {
-    it("Should preserve certificate data after metadata upgrade", async function () {
-      const { nft, metadataProxy, admin, metadataAddress } =
-        await loadFixture(deployFixture);
+  console.log("Metadata Proxy address:", PROXY_ADDRESS);
 
-      // Mint NFT
-      await nft.connect(admin).mint(admin.address, 1, 1, ethers.parseEther("1000"));
+  // Load new implementation
+  console.log("\n📦 Preparing new implementation: NFTMetadataUpgradeable");
+  const NFTMetadata = await ethers.getContractFactory("NFTMetadataUpgradeable");
 
-      // Get data before upgrade
-      const dataBefore = await metadataProxy.getCertificateData(1);
-      const uriBefore = await nft.tokenURI(1);
-
-      // Upgrade metadata contract
-      const NFTMetadataV2 = await ethers.getContractFactory("NFTMetadataUpgradeable");
-      const upgraded = await upgrades.upgradeProxy(metadataAddress, NFTMetadataV2);
-
-      // Get data after upgrade
-      const dataAfter = await upgraded.getCertificateData(1);
-      const uriAfter = await nft.tokenURI(1);
-
-      expect(dataAfter.depositId).to.equal(dataBefore.depositId);
-      expect(dataAfter.planId).to.equal(dataBefore.planId);
-      expect(dataAfter.depositAmount).to.equal(dataBefore.depositAmount);
-      expect(uriAfter).to.equal(uriBefore);
+  // Validate upgrade
+  console.log("\n🔍 Validating upgrade...");
+  try {
+    await upgrades.validateUpgrade(PROXY_ADDRESS, NFTMetadata, {
+      kind: "uups",
     });
+    console.log("✅ Upgrade validation passed");
+  } catch (error) {
+    console.error("❌ Upgrade validation failed:");
+    throw error;
+  }
 
-    it("Should allow minting after metadata upgrade", async function () {
-      const { nft, metadataProxy, admin, metadataAddress } =
-        await loadFixture(deployFixture);
-
-      // Upgrade metadata first
-      const NFTMetadataV2 = await ethers.getContractFactory("NFTMetadataUpgradeable");
-      await upgrades.upgradeProxy(metadataAddress, NFTMetadataV2);
-
-      // Mint after upgrade
-      await expect(
-        nft.connect(admin).mint(admin.address, 1, 1, ethers.parseEther("1000"))
-      ).to.not.be.reverted;
-
-      // Verify metadata stored correctly
-      const data = await metadataProxy.getCertificateData(1);
-      expect(data.depositAmount).to.equal(ethers.parseEther("1000"));
-    });
-
-    it("NFT contract remains unchanged during metadata upgrade", async function () {
-      const { nft, metadataAddress } = await loadFixture(deployFixture);
-
-      const nftAddressBefore = await nft.getAddress();
-      const nameBefore = await nft.name();
-      const symbolBefore = await nft.symbol();
-
-      // Upgrade metadata
-      const NFTMetadataV2 = await ethers.getContractFactory("NFTMetadataUpgradeable");
-      await upgrades.upgradeProxy(metadataAddress, NFTMetadataV2);
-
-      // NFT unchanged
-      const nftAddressAfter = await nft.getAddress();
-      const nameAfter = await nft.name();
-      const symbolAfter = await nft.symbol();
-
-      expect(nftAddressAfter).to.equal(nftAddressBefore);
-      expect(nameAfter).to.equal(nameBefore);
-      expect(symbolAfter).to.equal(symbolBefore);
-    });
+  // Upgrade proxy
+  console.log("\n⬆️  Upgrading proxy...");
+  const upgraded = await upgrades.upgradeProxy(PROXY_ADDRESS, NFTMetadata, {
+    kind: "uups",
   });
-});
+  await upgraded.waitForDeployment();
+  console.log("✅ Proxy upgraded successfully");
+
+  // Get addresses
+  const proxyAddress = await upgraded.getAddress();
+  const newImplementationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+
+  // Verify
+  const network = await ethers.provider.getNetwork();
+  if (network.chainId !== 31337n && network.chainId !== 1337n) {
+    console.log("\n⏳ Waiting for confirmations...");
+    await upgraded.deploymentTransaction()?.wait(6);
+
+    console.log("🔍 Verifying implementation...");
+    try {
+      await run("verify:verify", {
+        address: newImplementationAddress,
+        constructorArguments: [],
+      });
+      console.log("✅ Verified");
+    } catch (error: any) {
+      console.log(
+        error.message.includes("already verified")
+          ? "ℹ️  Already verified"
+          : `❌ ${error.message}`
+      );
+    }
+  }
+
+  console.log("\n" + "=".repeat(50));
+  console.log("🎉 NFT Metadata Upgrade completed!");
+  console.log("=".repeat(50));
+  console.log("Proxy:", proxyAddress);
+  console.log("New Implementation:", newImplementationAddress);
+  console.log("=".repeat(50));
+}
+
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });

@@ -9,9 +9,9 @@ async function main() {
 
   const [deployer] = await ethers.getSigners();
   
-  const savingBankDeployment = await deployments.get("SavingBankV2");
+  const savingBankDeployment = await deployments.get("SavingBankUpgradeable");
   const savingBank = await ethers.getContractAt(
-    "SavingBankV2",
+    "SavingBankUpgradeable",
     savingBankDeployment.address,
   );
 
