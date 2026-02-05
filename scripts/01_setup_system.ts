@@ -4,7 +4,7 @@ import { ethers, deployments } from "hardhat";
  * Script: Setup hệ thống sau khi deploy
  * Mục đích: Cấu hình các contract để hoạt động với nhau
  *
- * ✅ UPDATED FOR UPGRADEABLE CONTRACTS
+ * ✅ UPDATED FOR UPGRADEABLE CONTRACTS + NFTMetadataUpgradeable
  */
 async function main() {
   console.log("=== SETUP SYSTEM (UPGRADEABLE) ===\n");
@@ -22,6 +22,7 @@ async function main() {
     "InterestVaultUpgradeable",
   );
   const nftDeployment = await deployments.get("SavingBankNFT");
+  const nftMetadataDeployment = await deployments.get("NFTMetadataUpgradeable"); // ✅ NEW
   const savingBankDeployment = await deployments.get("SavingBankUpgradeable");
   const timelockDeployment = await deployments.get("SavingBankTimelock");
 
@@ -42,6 +43,10 @@ async function main() {
     "SavingBankNFT",
     nftDeployment.address,
   );
+  const nftMetadata = await ethers.getContractAt(
+    "NFTMetadataUpgradeable",
+    nftMetadataDeployment.address,
+  ); 
   const savingBank = await ethers.getContractAt(
     "SavingBankUpgradeable",
     savingBankDeployment.address,
@@ -56,15 +61,30 @@ async function main() {
   console.log("  PrincipalVault:", principalVaultDeployment.address);
   console.log("  InterestVault:", interestVaultDeployment.address);
   console.log("  NFT:", nftDeployment.address);
+  console.log("  NFTMetadata:", nftMetadataDeployment.address); // ✅ NEW
   console.log("  SavingBank:", savingBankDeployment.address);
   console.log("  Timelock:", timelockDeployment.address);
   console.log();
+
+  // ✅ NEW: Setup NFTMetadata - Set NFT contract address
+  console.log("⚙️  Setting up NFTMetadata...");
+  const tx0 = await nftMetadata.setNFTContract(nftDeployment.address);
+  await tx0.wait();
+  console.log("  ✅ NFTMetadata.setNFTContract()");
+  console.log("     NFT contract address set to:", nftDeployment.address, "\n");
 
   // Setup NFT - Grant ADMIN_ROLE quyền set SavingBank
   console.log("⚙️  Setting up NFT...");
   const tx1 = await nft.setSavingBank(savingBankDeployment.address);
   await tx1.wait();
-  console.log("  ✅ NFT configured\n");
+  console.log("  ✅ NFT.setSavingBank()");
+  console.log("     SavingBank address set to:", savingBankDeployment.address);
+  
+  // ✅ NEW: Set metadata contract in NFT
+  const tx1b = await nft.setMetadataContract(nftMetadataDeployment.address);
+  await tx1b.wait();
+  console.log("  ✅ NFT.setMetadataContract()");
+  console.log("     Metadata contract address set to:", nftMetadataDeployment.address, "\n");
 
   // Setup PrincipalVault
   console.log("⚙️  Setting up PrincipalVault...");
@@ -74,7 +94,8 @@ async function main() {
     savingBankDeployment.address,
   );
   await tx2.wait();
-  console.log("  ✅ PrincipalVault configured\n");
+  console.log("  ✅ PrincipalVault.grantRole(OPERATOR_ROLE)");
+  console.log("     Granted to:", savingBankDeployment.address, "\n");
 
   // Setup InterestVault
   console.log("⚙️  Setting up InterestVault...");
@@ -83,7 +104,8 @@ async function main() {
     savingBankDeployment.address,
   );
   await tx3.wait();
-  console.log("  ✅ InterestVault configured\n");
+  console.log("  ✅ InterestVault.grantRole(OPERATOR_ROLE)");
+  console.log("     Granted to:", savingBankDeployment.address, "\n");
 
   // Setup Timelock Roles
   console.log("⚙️  Setting up Timelock roles...");
@@ -92,18 +114,20 @@ async function main() {
 
   const tx7 = await timelock.grantRole(EXECUTOR_ROLE, deployer.address);
   await tx7.wait();
-  console.log("  ✅ Granted EXECUTOR_ROLE to deployer");
+  console.log("  ✅ Timelock.grantRole(EXECUTOR_ROLE)");
+  console.log("     Granted to:", deployer.address);
 
   const tx8 = await timelock.grantRole(PROPOSER_ROLE, deployer.address);
   await tx8.wait();
-  console.log("  ✅ Granted PROPOSER_ROLE to deployer\n");
+  console.log("  ✅ Timelock.grantRole(PROPOSER_ROLE)");
+  console.log("     Granted to:", deployer.address, "\n");
 
   // Mint tokens to deployer
   console.log("💰 Minting tokens...");
   const mintAmount = ethers.parseEther("1000000"); // 1M tokens
   const tx4 = await token.mint(deployer.address, mintAmount);
   await tx4.wait();
-  console.log("  ✅ Minted", ethers.formatEther(mintAmount), "tokens\n");
+  console.log("  ✅ Minted", ethers.formatEther(mintAmount), "tokens to deployer\n");
 
   // Fund InterestVault
   console.log("💰 Funding InterestVault...");
@@ -120,10 +144,16 @@ async function main() {
 
   console.log("✅ System setup completed!");
   console.log("\n📊 Summary:");
-  console.log("  - All contracts are UPGRADEABLE (except NFT)");
-  console.log("  - Roles configured");
-  console.log("  - Vaults funded");
+  console.log("  - All contracts are UPGRADEABLE (except NFT & Timelock)");
+  console.log("  - NFTMetadata ↔ NFT: Connected");
+  console.log("  - NFT ↔ SavingBank: Connected");
+  console.log("  - Vaults ↔ SavingBank: Roles granted");
+  console.log("  - Timelock: Roles configured");
+  console.log("  - InterestVault: Funded");
   console.log("  - Ready to create plans!");
+  console.log("\n💡 Next steps:");
+  console.log("  1. Create saving plans: npx hardhat run scripts/create-plans.js");
+  console.log("  2. Start blockchain listener for auto-metadata generation");
 }
 
 main().catch((error) => {

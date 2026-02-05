@@ -10,9 +10,11 @@ async function main() {
   const [deployer, user1] = await ethers.getSigners();
   
   const nftDeployment = await deployments.get("SavingBankNFT");
+  const nftMetadataDeployment = await deployments.get("NFTMetadataUpgradeable");
   const savingBankDeployment = await deployments.get("SavingBankUpgradeable");
   
   const nft = await ethers.getContractAt("SavingBankNFT", nftDeployment.address);
+  const nftMetadata = await ethers.getContractAt("NFTMetadataUpgradeable", nftMetadataDeployment.address);
   const savingBank = await ethers.getContractAt("SavingBankUpgradeable", savingBankDeployment.address);
 
   const user = user1 || deployer;
@@ -114,17 +116,51 @@ async function main() {
       console.log("  Owner:", nftOwner);
       console.log("  Status: Active");
 
-      // Get NFT metadata
-      const certificateData = await nft.getCertificateData(depositId);
-      console.log(
-        "  Deposit Amount:",
-        ethers.formatEther(certificateData.depositAmount),
-        "tokens",
-      );
-      console.log(
-        "  Deposit Time:",
-        new Date(Number(certificateData.depositTime) * 1000).toLocaleString(),
-      );
+      // Get NFT metadata from NFTMetadataUpgradeable
+      try {
+        const certificateData = await nftMetadata.getCertificateData(depositId);
+        console.log(
+          "  Deposit Amount:",
+          ethers.formatEther(certificateData.depositAmount),
+          "tokens",
+        );
+        console.log(
+          "  Deposit Time:",
+          new Date(Number(certificateData.depositTime) * 1000).toLocaleString(),
+        );
+      } catch (certError) {
+        console.log("  Certificate data: Not available");
+      }
+
+      // Get IPFS metadata
+      console.log("\n  📦 IPFS Metadata:");
+      
+      try {
+        // Try to get from NFT contract first
+        const nftTokenURI = await nft.tokenURI(depositId);
+        console.log("    NFT.tokenURI():", nftTokenURI);
+      } catch (nftError) {
+        console.log("    NFT.tokenURI(): Not available");
+      }
+
+      try {
+        // Get from NFTMetadata contract
+        const metadataTokenURI = await nftMetadata.tokenURI(depositId);
+        console.log("    NFTMetadata.tokenURI():", metadataTokenURI);
+        
+        // Extract and display IPFS info
+        if (metadataTokenURI.startsWith("ipfs://")) {
+          const ipfsHash = metadataTokenURI.replace("ipfs://", "").replace(".json", "");
+          console.log("\n    🔗 Access Links:");
+          console.log("      IPFS Hash:", ipfsHash);
+          console.log("      IPFS.io:", `https://ipfs.io/ipfs/${ipfsHash}`);
+          console.log("      Pinata:", `https://gateway.pinata.cloud/ipfs/${ipfsHash}`);
+        }
+      } catch (metadataError: any) {
+        console.log("    NFTMetadata.tokenURI():", metadataError.message || "Not set");
+        console.log("    ⚠️  IPFS metadata has not been set yet");
+        console.log("    💡 Run blockchain listener to auto-generate metadata");
+      }
     } catch (error) {
       console.log("  Status: Burned (deposit closed)");
     }

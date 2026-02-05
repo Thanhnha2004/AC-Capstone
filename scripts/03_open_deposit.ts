@@ -34,7 +34,7 @@ async function main() {
     console.log("  ✅ Minted", ethers.formatEther(mintAmount), "tokens\n");
 
     // User chọn Plan 2 (90 ngày - 8% APR)
-    const planId = 2;
+    const planId = 1;
     const depositAmount = ethers.parseEther("5000");
 
     console.log("📋 Selected Plan Info:");
