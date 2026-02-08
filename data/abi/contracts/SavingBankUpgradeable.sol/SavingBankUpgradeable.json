@@ -47,6 +47,26 @@
         "type": "error"
     },
     {
+        "inputs": [],
+        "name": "AutoCompoundAlreadyEnabled",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "AutoCompoundNotEnabled",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "CompoundTooEarly",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "DepositAlreadyMatured",
+        "type": "error"
+    },
+    {
         "inputs": [
             {
                 "internalType": "address",
@@ -139,6 +159,11 @@
     },
     {
         "inputs": [],
+        "name": "NoInterestToCompound",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "NotActiveDeposit",
         "type": "error"
     },
@@ -192,6 +217,101 @@
         ],
         "name": "UUPSUnsupportedProxiableUUID",
         "type": "error"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "depositId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            }
+        ],
+        "name": "AutoCompoundDisabled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "depositId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            }
+        ],
+        "name": "AutoCompoundEnabled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "depositId",
+                "type": "uint256"
+            }
+        ],
+        "name": "CompoundFailed",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "depositId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "interestAdded",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newPrincipal",
+                "type": "uint256"
+            }
+        ],
+        "name": "Compounded",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256[]",
+                "name": "depositIds",
+                "type": "uint256[]"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "totalCompounded",
+                "type": "uint256"
+            }
+        ],
+        "name": "CompoundedBatch",
+        "type": "event"
     },
     {
         "anonymous": false,
@@ -805,6 +925,32 @@
         "inputs": [
             {
                 "internalType": "uint256",
+                "name": "depositId",
+                "type": "uint256"
+            }
+        ],
+        "name": "compound",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256[]",
+                "name": "depositIds",
+                "type": "uint256[]"
+            }
+        ],
+        "name": "compoundBatch",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
                 "name": "tenorDays",
                 "type": "uint256"
             },
@@ -893,6 +1039,21 @@
                 "internalType": "uint256",
                 "name": "snapshotEarlyWithdrawPenaltyBps",
                 "type": "uint256"
+            },
+            {
+                "internalType": "bool",
+                "name": "autoCompound",
+                "type": "bool"
+            },
+            {
+                "internalType": "uint256",
+                "name": "lastCompoundTime",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "accumulatedInterest",
+                "type": "uint256"
             }
         ],
         "stateMutability": "view",
@@ -906,7 +1067,33 @@
                 "type": "uint256"
             }
         ],
+        "name": "disableAutoCompound",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "depositId",
+                "type": "uint256"
+            }
+        ],
         "name": "earlyWithdraw",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "depositId",
+                "type": "uint256"
+            }
+        ],
+        "name": "enableAutoCompound",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

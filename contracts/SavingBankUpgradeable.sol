@@ -73,6 +73,11 @@ contract SavingBankUpgradeable is
     error AlreadyRenewed();
     error OnlyTimelockOrAdmin();
     error InvalidTimelock();
+    error AutoCompoundAlreadyEnabled();
+    error AutoCompoundNotEnabled();
+    error CompoundTooEarly();
+    error DepositAlreadyMatured();
+    error NoInterestToCompound();
 
     /*//////////////////////////////////////////////////////////////
                               CONSTANTS
@@ -113,10 +118,12 @@ contract SavingBankUpgradeable is
         uint256 maturityAt;
         DepositStatus status;
         uint256 renewedDepositId;
-        // SNAPSHOT PLAN DATA
         uint256 snapshotAprBps;
         uint256 snapshotTenorDays;
         uint256 snapshotEarlyWithdrawPenaltyBps;
+        bool autoCompound;
+        uint256 lastCompoundTime;
+        uint256 accumulatedInterest;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -266,6 +273,15 @@ contract SavingBankUpgradeable is
         uint256 newBalance,
         string operation
     );
+    event AutoCompoundEnabled(uint256 indexed depositId, address indexed user);
+    event AutoCompoundDisabled(uint256 indexed depositId, address indexed user);
+    event Compounded(
+        uint256 indexed depositId,
+        uint256 interestAdded,
+        uint256 newPrincipal
+    );
+    event CompoundedBatch(uint256[] depositIds, uint256 totalCompounded);
+    event CompoundFailed(uint256 depositId);
 
     /*//////////////////////////////////////////////////////////////
                           MODIFIERS
@@ -310,7 +326,10 @@ contract SavingBankUpgradeable is
             renewedDepositId: 0,
             snapshotAprBps: plan.aprBps,
             snapshotTenorDays: plan.tenorDays,
-            snapshotEarlyWithdrawPenaltyBps: plan.earlyWithdrawPenaltyBps
+            snapshotEarlyWithdrawPenaltyBps: plan.earlyWithdrawPenaltyBps,
+            autoCompound: true,
+            lastCompoundTime: block.timestamp,
+            accumulatedInterest: 0
         });
 
         userDepositIds[depositor].push(newDepositId);
@@ -332,7 +351,7 @@ contract SavingBankUpgradeable is
     }
 
     /**
-     * @notice Withdraw at maturity (principal + interest)
+     * @notice Withdraw at maturity
      */
     function withdraw(uint256 depositId) external whenNotPaused nonReentrant {
         DepositCertificate storage deposit = depositCertificates[depositId];
@@ -341,32 +360,68 @@ contract SavingBankUpgradeable is
         if (deposit.status != DepositStatus.Active) revert NotActiveDeposit();
         if (block.timestamp < deposit.maturityAt) revert NotMaturedYet();
 
-        uint256 interest = _calculateInterest(depositId);
+        uint256 totalInterest;
         uint256 principal = deposit.principal;
 
-        emit InterestCalculated(
-            depositId,
-            principal,
-            principal,
-            block.timestamp
-        );
+        // Case 1: Auto-compound is still enabled - do final compound
+        if (deposit.autoCompound) {
+            uint256 timePassed = deposit.maturityAt - deposit.lastCompoundTime;
+            if (timePassed > 0) {
+                uint256 finalInterest = (deposit.principal *
+                    deposit.snapshotAprBps *
+                    timePassed) / (SECONDS_PER_YEAR * BASIS_POINTS);
+                if (finalInterest > 0) {
+                    // ✅ THÊM: Transfer interest to PrincipalVault
+                    interestVault.transferInterestToPrincipal(
+                        address(principalVault),
+                        deposit.owner,
+                        finalInterest
+                    );
+                    principalVault.receiveDirectDeposit(
+                        deposit.owner,
+                        finalInterest
+                    );
+
+                    deposit.principal += finalInterest;
+                    deposit.accumulatedInterest += finalInterest;
+                    principal = deposit.principal;
+                }
+            }
+            totalInterest = deposit.accumulatedInterest;
+        }
+        // Case 2: Auto-compound was disabled
+        else if (deposit.accumulatedInterest > 0) {
+            // Calculate remaining interest from disable time to maturity
+            uint256 timePassed = deposit.maturityAt - deposit.lastCompoundTime;
+            uint256 remainingInterest = (deposit.principal *
+                deposit.snapshotAprBps *
+                timePassed) / (SECONDS_PER_YEAR * BASIS_POINTS);
+
+            // Total interest = only the remaining interest (accumulated already in principal)
+            totalInterest = remainingInterest;
+        }
+        // Case 3: Never used auto-compound - calculate normal interest
+        else {
+            totalInterest = _calculateInterest(depositId);
+        }
 
         deposit.status = DepositStatus.Withdrawn;
 
-        // Trả lãi từ InterestVault
-        interestVault.payInterest(msg.sender, interest);
+        // Calculate original principal (before any compound)
+        uint256 originalPrincipal = principal - deposit.accumulatedInterest;
 
-        // Trả gốc từ PrincipalVault
-        principalVault.withdrawPrincipal(msg.sender, principal);
+        // Withdraw original principal from PrincipalVault
+        principalVault.withdrawPrincipal(msg.sender, originalPrincipal);
 
-        // Burn NFT
+        // Pay all interest (accumulated + new) from InterestVault
+        interestVault.payInterest(msg.sender, totalInterest);
         nft.burn(depositId);
 
         emit Withdrawn(
             depositId,
             msg.sender,
             principal,
-            interest,
+            totalInterest,
             DepositStatus.Withdrawn
         );
     }
@@ -461,7 +516,10 @@ contract SavingBankUpgradeable is
             renewedDepositId: 0,
             snapshotAprBps: plan.aprBps,
             snapshotTenorDays: plan.tenorDays,
-            snapshotEarlyWithdrawPenaltyBps: plan.earlyWithdrawPenaltyBps
+            snapshotEarlyWithdrawPenaltyBps: plan.earlyWithdrawPenaltyBps,
+            autoCompound: true,
+            lastCompoundTime: block.timestamp,
+            accumulatedInterest: 0
         });
 
         // Burn old NFT and mint new NFT
@@ -476,6 +534,116 @@ contract SavingBankUpgradeable is
             newPrincipal,
             maturity
         );
+    }
+
+    function enableAutoCompound(uint256 depositId) external {
+        DepositCertificate storage deposit = depositCertificates[depositId];
+
+        // Validations
+        if (deposit.owner != msg.sender) revert NotOwner();
+        if (deposit.status != DepositStatus.Active) revert NotActiveDeposit();
+        if (block.timestamp >= deposit.maturityAt)
+            revert DepositAlreadyMatured();
+        if (deposit.autoCompound) revert AutoCompoundAlreadyEnabled();
+
+        // Enable
+        deposit.autoCompound = true;
+        deposit.lastCompoundTime = block.timestamp;
+
+        emit AutoCompoundEnabled(depositId, msg.sender);
+    }
+
+    function disableAutoCompound(uint256 depositId) external {
+        DepositCertificate storage deposit = depositCertificates[depositId];
+
+        // Validations
+        if (deposit.owner != msg.sender) revert NotOwner();
+        if (deposit.status != DepositStatus.Active) revert NotActiveDeposit();
+        if (block.timestamp >= deposit.maturityAt)
+            revert DepositAlreadyMatured();
+        if (!deposit.autoCompound) revert AutoCompoundNotEnabled();
+
+        // Compound any accumulated interest before disabling
+        uint256 timePassed = block.timestamp - deposit.lastCompoundTime;
+        if (timePassed > 0) {
+            uint256 interest = (deposit.principal *
+                deposit.snapshotAprBps *
+                timePassed) / (SECONDS_PER_YEAR * BASIS_POINTS);
+            if (interest > 0) {
+                // Transfer from InterestVault to PrincipalVault
+                interestVault.transferInterestToPrincipal(
+                    address(principalVault),
+                    deposit.owner,
+                    interest
+                );
+                principalVault.receiveDirectDeposit(deposit.owner, interest);
+
+                deposit.principal += interest;
+                deposit.accumulatedInterest += interest;
+            }
+        }
+
+        // Enable
+        deposit.autoCompound = false;
+        deposit.lastCompoundTime = block.timestamp;
+
+        emit AutoCompoundDisabled(depositId, msg.sender);
+    }
+
+    function compound(uint256 depositId) public nonReentrant whenNotPaused {
+        DepositCertificate storage deposit = depositCertificates[depositId];
+
+        // 1. Validations
+        if (!deposit.autoCompound) revert AutoCompoundNotEnabled();
+        if (deposit.status != DepositStatus.Active) revert NotActiveDeposit();
+        if (block.timestamp >= deposit.maturityAt)
+            revert DepositAlreadyMatured();
+
+        // 2. Check minimum time passed (e.g., 7 days)
+        uint256 MIN_COMPOUND_INTERVAL = 7 days;
+        if (
+            block.timestamp < deposit.lastCompoundTime + MIN_COMPOUND_INTERVAL
+        ) {
+            revert CompoundTooEarly();
+        }
+
+        // 3. Calculate interest since last compound
+        uint256 timePassed = block.timestamp - deposit.lastCompoundTime;
+        uint256 interest = (deposit.principal *
+            deposit.snapshotAprBps *
+            timePassed) / (SECONDS_PER_YEAR * BASIS_POINTS);
+
+        if (interest == 0) revert NoInterestToCompound();
+
+        // 4. Transfer interest from InterestVault to PrincipalVault
+        interestVault.transferInterestToPrincipal(
+            address(principalVault),
+            deposit.owner,
+            interest
+        );
+        principalVault.receiveDirectDeposit(deposit.owner, interest);
+
+        // 5. Update certificate
+        deposit.principal += interest;
+        deposit.accumulatedInterest += interest;
+        deposit.lastCompoundTime = block.timestamp;
+
+        emit Compounded(depositId, interest, deposit.principal);
+    }
+
+    function compoundBatch(uint256[] calldata depositIds) public {
+        uint256 successCount = 0;
+
+        for (uint256 i = 0; i < depositIds.length; i++) {
+            try this.compound(depositIds[i]) {
+                successCount++;
+            } catch {
+                // Log error but continue
+                emit CompoundFailed(depositIds[i]);
+            }
+        }
+
+        emit CompoundedBatch(depositIds, successCount);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -732,5 +900,5 @@ contract SavingBankUpgradeable is
      * @dev Storage gap for future upgrades
      * Giảm gap khi thêm state variables mới
      */
-    uint256[49] private __gap;
+    uint256[46] private __gap;
 }

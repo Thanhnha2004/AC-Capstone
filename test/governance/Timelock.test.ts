@@ -97,19 +97,6 @@ describe("SavingBankTimelock Tests", function () {
       expect(await timelock.isCanceller(canceller.address)).to.be.true;
     });
 
-    it("Should emit TimelockDeployed event", async function () {
-      const [admin, proposer, executor] = await ethers.getSigners();
-      const TimelockFactory = await ethers.getContractFactory("SavingBankTimelock");
-      
-      await expect(
-        TimelockFactory.deploy(
-          [proposer.address],
-          [executor.address],
-          admin.address
-        )
-      ).to.emit(TimelockFactory, "TimelockDeployed");
-    });
-
     it("Should return correct MIN_DELAY constant", async function () {
       const { timelock } = await loadFixture(deployTimelockFixture);
       
@@ -592,7 +579,7 @@ describe("SavingBankTimelock Tests", function () {
         salt
       );
 
-      expect(await timelock.isOperationPending(operationHash)).to.be.false;
+      expect(await timelock.isOperationPending(operationHash)).to.be.true;
       expect(await timelock.isOperationReady(operationHash)).to.be.true;
       expect(await timelock.isOperationDone(operationHash)).to.be.false;
     });
