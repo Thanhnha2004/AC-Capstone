@@ -342,14 +342,14 @@ function getMigrationPreview(
 ```
 
 **Subtasks:**
-- [ ] 3.3.1 Implement `migratePlan()` function
-- [ ] 3.3.2 Calculate interest up to migration point
-- [ ] 3.3.3 Apply migration fee
-- [ ] 3.3.4 Update deposit with new plan
-- [ ] 3.3.5 Handle NFT (burn old, mint new)
-- [ ] 3.3.6 Add events: `PlanMigrated`
-- [ ] 3.3.7 Write tests (10+ test cases)
-- [ ] 3.3.8 Document migration rules
+- [✅] 3.3.1 Implement `migratePlan()` function
+- [✅] 3.3.2 Calculate interest up to migration point
+- [✅] 3.3.3 Apply migration fee
+- [✅] 3.3.4 Update deposit with new plan
+- [✅] 3.3.5 Handle NFT (burn old, mint new)
+- [✅] 3.3.6 Add events: `PlanMigrated`
+- [✅] 3.3.7 Write tests (10+ test cases)
+- [✅] 3.3.8 Document migration rules
 
 **Estimated Time:** 6 days  
 **Files Modified:** `SavingBankUpgradeable.sol`, `SavingBankNFT.sol`  

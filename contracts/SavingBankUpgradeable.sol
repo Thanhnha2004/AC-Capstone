@@ -80,6 +80,9 @@ contract SavingBankUpgradeable is
     error NoInterestToCompound();
     error InsufficientBalance();
     error BelowMinimumRemaining();
+    error SamePlan();
+    error MigrationFeeExceedsMax();
+    error InvalidMigrationFee();
 
     /*//////////////////////////////////////////////////////////////
                               CONSTANTS
@@ -89,6 +92,8 @@ contract SavingBankUpgradeable is
 
     uint256 private constant SECONDS_PER_YEAR = 365 days;
     uint256 private constant BASIS_POINTS = 10000;
+
+    uint256 private constant MAX_MIGRATION_FEE_BPS = 500;
 
     /*//////////////////////////////////////////////////////////////
                                 ENUMS
@@ -155,6 +160,8 @@ contract SavingBankUpgradeable is
 
     mapping(uint256 => PartialWithdrawal[]) public partialWithdrawHistory;
 
+    uint256 public migrationFeeBps; // Migration fee in basis points (default 50 = 0.5%)
+
     /*//////////////////////////////////////////////////////////////
                             INITIALIZER
     //////////////////////////////////////////////////////////////*/
@@ -200,6 +207,7 @@ contract SavingBankUpgradeable is
 
         nextPlanId = 1;
         nextDepositId = 1;
+        migrationFeeBps = 50;
 
         // Grant roles
         _grantRole(ADMIN_ROLE, _admin);
@@ -311,6 +319,16 @@ contract SavingBankUpgradeable is
         uint256 attemptedAmount,
         uint256 minimumRequired
     );
+    event PlanMigrated(
+        uint256 indexed oldDepositId,
+        uint256 indexed newDepositId,
+        uint256 indexed oldPlanId,
+        uint256 newPlanId,
+        uint256 accruedInterest,
+        uint256 migrationFee,
+        uint256 newPrincipal
+    );
+    event MigrationFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps);
 
     /*//////////////////////////////////////////////////////////////
                           MODIFIERS
@@ -867,6 +885,172 @@ contract SavingBankUpgradeable is
         );
     }
 
+    /**
+     * @notice Migrate deposit to a new plan
+     * @dev Burns old NFT, creates new deposit with new plan
+     * @param depositId Current deposit ID
+     * @param newPlanId Plan ID to migrate to
+     */
+    function migratePlan(
+        uint256 depositId,
+        uint256 newPlanId
+    ) external whenNotPaused nonReentrant {
+        DepositCertificate storage oldDeposit = depositCertificates[depositId];
+
+        // ================================================================
+        // STEP 1: Validations
+        // ================================================================
+        if (oldDeposit.owner != msg.sender) revert NotOwner();
+        if (oldDeposit.status != DepositStatus.Active)
+            revert NotActiveDeposit();
+        if (block.timestamp >= oldDeposit.maturityAt) revert AlreadyMatured();
+        if (oldDeposit.planId == newPlanId) revert SamePlan();
+
+        SavingPlan memory newPlan = savingPlans[newPlanId];
+        if (!newPlan.enabled) revert NotEnabledPlan();
+
+        // ================================================================
+        // STEP 2: Calculate accrued interest up to migration point
+        // ================================================================
+        uint256 currentPrincipal = oldDeposit.principal -
+            oldDeposit.totalPartialWithdrawn;
+        uint256 accruedInterest;
+
+        // Handle auto-compound case
+        if (oldDeposit.autoCompound) {
+            uint256 timePassed = block.timestamp - oldDeposit.lastCompoundTime;
+            if (timePassed > 0) {
+                accruedInterest =
+                    (currentPrincipal *
+                        oldDeposit.snapshotAprBps *
+                        timePassed) /
+                    (SECONDS_PER_YEAR * BASIS_POINTS);
+
+                if (accruedInterest > 0) {
+                    // Transfer interest to PrincipalVault
+                    interestVault.transferInterestToPrincipal(
+                        address(principalVault),
+                        oldDeposit.owner,
+                        accruedInterest
+                    );
+                    principalVault.receiveDirectDeposit(
+                        oldDeposit.owner,
+                        accruedInterest
+                    );
+
+                    oldDeposit.principal += accruedInterest;
+                    oldDeposit.accumulatedInterest += accruedInterest;
+                    currentPrincipal += accruedInterest;
+                }
+            }
+        }
+        // Handle disabled compound case
+        else if (oldDeposit.accumulatedInterest > 0) {
+            uint256 timePassed = block.timestamp - oldDeposit.lastCompoundTime;
+            accruedInterest =
+                (currentPrincipal * oldDeposit.snapshotAprBps * timePassed) /
+                (SECONDS_PER_YEAR * BASIS_POINTS);
+        }
+        // Normal case (no compound)
+        else {
+            uint256 timePassed = block.timestamp - oldDeposit.startAt;
+            accruedInterest =
+                (currentPrincipal * oldDeposit.snapshotAprBps * timePassed) /
+                (SECONDS_PER_YEAR * BASIS_POINTS);
+        }
+
+        // ================================================================
+        // STEP 3: Calculate new principal and migration fee
+        // ================================================================
+        uint256 principalWithInterest = currentPrincipal + accruedInterest;
+        uint256 migrationFee = (principalWithInterest * migrationFeeBps) /
+            BASIS_POINTS;
+        uint256 newPrincipal = principalWithInterest - migrationFee;
+
+        // Check new principal meets minimum deposit of new plan
+        if (newPrincipal < newPlan.minDeposit) revert InvalidAmount();
+        if (newPlan.maxDeposit > 0 && newPrincipal > newPlan.maxDeposit)
+            revert InvalidAmount();
+
+        // ================================================================
+        // STEP 4: Transfer accrued interest (if not yet transferred)
+        // ================================================================
+        if (accruedInterest > 0 && !oldDeposit.autoCompound) {
+            interestVault.transferInterestToPrincipal(
+                address(principalVault),
+                oldDeposit.owner,
+                accruedInterest
+            );
+            principalVault.receiveDirectDeposit(
+                oldDeposit.owner,
+                accruedInterest
+            );
+        }
+
+        // ================================================================
+        // STEP 5: Collect migration fee
+        // ================================================================
+        if (migrationFee > 0) {
+            principalVault.withdrawPrincipal(feeReceiver, migrationFee);
+        }
+
+        // ================================================================
+        // STEP 6: Create new deposit
+        // ================================================================
+        uint256 newDepositId = nextDepositId;
+        uint256 newMaturity = block.timestamp + (newPlan.tenorDays * 1 days);
+
+        depositCertificates[newDepositId] = DepositCertificate({
+            owner: msg.sender,
+            planId: newPlanId,
+            principal: newPrincipal,
+            startAt: block.timestamp,
+            maturityAt: newMaturity,
+            status: DepositStatus.Active,
+            renewedDepositId: 0,
+            snapshotAprBps: newPlan.aprBps,
+            snapshotTenorDays: newPlan.tenorDays,
+            snapshotEarlyWithdrawPenaltyBps: newPlan.earlyWithdrawPenaltyBps,
+            autoCompound: false, // Reset to false
+            lastCompoundTime: block.timestamp,
+            accumulatedInterest: 0,
+            totalPartialWithdrawn: 0
+        });
+
+        userDepositIds[msg.sender].push(newDepositId);
+        nextDepositId++;
+
+        // ================================================================
+        // STEP 7: Update old deposit status
+        // ================================================================
+        oldDeposit.status = DepositStatus.Renewed;
+        oldDeposit.renewedDepositId = newDepositId;
+
+        // ================================================================
+        // STEP 8: Handle NFT (burn old, mint new)
+        // ================================================================
+        nft.burn(depositId);
+        nft.mint(msg.sender, newDepositId, newPlanId, newPrincipal);
+
+        emit PlanMigrated(
+            depositId,
+            newDepositId,
+            oldDeposit.planId,
+            newPlanId,
+            accruedInterest,
+            migrationFee,
+            newPrincipal
+        );
+
+        emit DepositCertificateOpened(
+            newDepositId,
+            msg.sender,
+            newPlanId,
+            newPrincipal,
+            newMaturity
+        );
+    }
+
     /*//////////////////////////////////////////////////////////////
                        OPERATOR FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -1027,6 +1211,20 @@ contract SavingBankUpgradeable is
         address newImplementation
     ) internal override onlyRole(ADMIN_ROLE) {}
 
+    /**
+     * @notice Set migration fee
+     * @dev Only admin or timelock can set
+     * @param newFeeBps New fee in basis points (max 5%)
+     */
+    function setMigrationFee(uint256 newFeeBps) external onlyTimelockOrAdmin {
+        if (newFeeBps > MAX_MIGRATION_FEE_BPS) revert MigrationFeeExceedsMax();
+
+        uint256 oldFee = migrationFeeBps;
+        migrationFeeBps = newFeeBps;
+
+        emit MigrationFeeUpdated(oldFee, newFeeBps);
+    }
+
     /*//////////////////////////////////////////////////////////////
                           VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -1131,6 +1329,97 @@ contract SavingBankUpgradeable is
         uint256 depositId
     ) external view returns (PartialWithdrawal[] memory) {
         return partialWithdrawHistory[depositId];
+    }
+
+    /**
+     * @notice Preview migration details before executing
+     * @param depositId Current deposit ID
+     * @param newPlanId Plan ID to migrate to
+     * @return currentInterest Accrued interest up to now
+     * @return newMaturityDate New maturity timestamp
+     * @return fee Migration fee to be charged
+     * @return newPrincipalAmount Principal amount in new plan
+     */
+    function getMigrationPreview(
+        uint256 depositId,
+        uint256 newPlanId
+    )
+        external
+        view
+        returns (
+            uint256 currentInterest,
+            uint256 newMaturityDate,
+            uint256 fee,
+            uint256 newPrincipalAmount
+        )
+    {
+        DepositCertificate memory deposit = depositCertificates[depositId];
+        SavingPlan memory newPlan = savingPlans[newPlanId];
+
+        if (deposit.status != DepositStatus.Active) revert NotActiveDeposit();
+        if (!newPlan.enabled) revert NotEnabledPlan();
+
+        // Calculate current principal after partial withdrawals
+        uint256 currentPrincipal = deposit.principal -
+            deposit.totalPartialWithdrawn;
+
+        // Calculate accrued interest
+        if (deposit.autoCompound) {
+            uint256 timePassed = block.timestamp - deposit.lastCompoundTime;
+            currentInterest =
+                (currentPrincipal * deposit.snapshotAprBps * timePassed) /
+                (SECONDS_PER_YEAR * BASIS_POINTS);
+        } else if (deposit.accumulatedInterest > 0) {
+            uint256 timePassed = block.timestamp - deposit.lastCompoundTime;
+            currentInterest =
+                (currentPrincipal * deposit.snapshotAprBps * timePassed) /
+                (SECONDS_PER_YEAR * BASIS_POINTS);
+        } else {
+            uint256 timePassed = block.timestamp - deposit.startAt;
+            currentInterest =
+                (currentPrincipal * deposit.snapshotAprBps * timePassed) /
+                (SECONDS_PER_YEAR * BASIS_POINTS);
+        }
+
+        // Calculate new amounts
+        uint256 principalWithInterest = currentPrincipal + currentInterest;
+        fee = (principalWithInterest * migrationFeeBps) / BASIS_POINTS;
+        newPrincipalAmount = principalWithInterest - fee;
+
+        // Calculate new maturity
+        newMaturityDate = block.timestamp + (newPlan.tenorDays * 1 days);
+
+        return (currentInterest, newMaturityDate, fee, newPrincipalAmount);
+    }
+
+    /**
+     * @notice Get migration fee percentage
+     * @return Fee in basis points
+     */
+    function getMigrationFee() external view returns (uint256) {
+        return migrationFeeBps;
+    }
+
+    /**
+     * @notice Check if deposit is eligible for migration
+     * @param depositId Deposit to check
+     * @return eligible True if can migrate
+     * @return reason Reason if not eligible
+     */
+    function canMigrate(
+        uint256 depositId
+    ) external view returns (bool eligible, string memory reason) {
+        DepositCertificate memory deposit = depositCertificates[depositId];
+
+        if (deposit.status != DepositStatus.Active) {
+            return (false, "Deposit not active");
+        }
+
+        if (block.timestamp >= deposit.maturityAt) {
+            return (false, "Already matured");
+        }
+
+        return (true, "");
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -134,6 +134,11 @@
     },
     {
         "inputs": [],
+        "name": "InvalidMigrationFee",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "InvalidMinDeposit",
         "type": "error"
     },
@@ -165,6 +170,11 @@
     {
         "inputs": [],
         "name": "InvalidVault",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "MigrationFeeExceedsMax",
         "type": "error"
     },
     {
@@ -210,6 +220,11 @@
     {
         "inputs": [],
         "name": "ReentrancyGuardReentrantCall",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "SamePlan",
         "type": "error"
     },
     {
@@ -489,6 +504,25 @@
         "anonymous": false,
         "inputs": [
             {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "oldFeeBps",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newFeeBps",
+                "type": "uint256"
+            }
+        ],
+        "name": "MigrationFeeUpdated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
                 "indexed": true,
                 "internalType": "uint256",
                 "name": "depositId",
@@ -682,6 +716,55 @@
             }
         ],
         "name": "PlanCreated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "oldDepositId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "newDepositId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "oldPlanId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newPlanId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "accruedInterest",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "migrationFee",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "newPrincipal",
+                "type": "uint256"
+            }
+        ],
+        "name": "PlanMigrated",
         "type": "event"
     },
     {
@@ -1032,6 +1115,30 @@
                 "type": "uint256"
             }
         ],
+        "name": "canMigrate",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "eligible",
+                "type": "bool"
+            },
+            {
+                "internalType": "string",
+                "name": "reason",
+                "type": "string"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "depositId",
+                "type": "uint256"
+            }
+        ],
         "name": "compound",
         "outputs": [],
         "stateMutability": "nonpayable",
@@ -1331,6 +1438,58 @@
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "getMigrationFee",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "depositId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "newPlanId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getMigrationPreview",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "currentInterest",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "newMaturityDate",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "fee",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "newPrincipalAmount",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [
             {
                 "internalType": "uint256",
@@ -1546,6 +1705,37 @@
                 "internalType": "contract IInterestVault",
                 "name": "",
                 "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "depositId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "newPlanId",
+                "type": "uint256"
+            }
+        ],
+        "name": "migratePlan",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "migrationFeeBps",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
             }
         ],
         "stateMutability": "view",
@@ -1813,6 +2003,19 @@
             }
         ],
         "name": "setFeeReceiver",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "newFeeBps",
+                "type": "uint256"
+            }
+        ],
+        "name": "setMigrationFee",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
