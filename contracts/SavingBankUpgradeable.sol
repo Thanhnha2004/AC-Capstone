@@ -78,6 +78,8 @@ contract SavingBankUpgradeable is
     error CompoundTooEarly();
     error DepositAlreadyMatured();
     error NoInterestToCompound();
+    error InsufficientBalance();
+    error BelowMinimumRemaining();
 
     /*//////////////////////////////////////////////////////////////
                               CONSTANTS
@@ -124,6 +126,13 @@ contract SavingBankUpgradeable is
         bool autoCompound;
         uint256 lastCompoundTime;
         uint256 accumulatedInterest;
+        uint256 totalPartialWithdrawn;
+    }
+
+    struct PartialWithdrawal {
+        uint256 amount;
+        uint256 timestamp;
+        uint256 penaltyAmount;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -143,6 +152,8 @@ contract SavingBankUpgradeable is
     IInterestVault public interestVault;
     address public feeReceiver;
     address public timelock;
+
+    mapping(uint256 => PartialWithdrawal[]) public partialWithdrawHistory;
 
     /*//////////////////////////////////////////////////////////////
                             INITIALIZER
@@ -282,6 +293,24 @@ contract SavingBankUpgradeable is
     );
     event CompoundedBatch(uint256[] depositIds, uint256 totalCompounded);
     event CompoundFailed(uint256 depositId);
+    event PartialWithdrawn(
+        uint256 indexed depositId,
+        address indexed user,
+        uint256 amount,
+        uint256 penalty,
+        uint256 amountToUser
+    );
+    event PartialWithdrawalPenaltyCalculated(
+        uint256 indexed depositId,
+        uint256 amount,
+        uint256 timeRemaining,
+        uint256 penalty
+    );
+    event MinimumRemainingViolation(
+        uint256 indexed depositId,
+        uint256 attemptedAmount,
+        uint256 minimumRequired
+    );
 
     /*//////////////////////////////////////////////////////////////
                           MODIFIERS
@@ -327,18 +356,16 @@ contract SavingBankUpgradeable is
             snapshotAprBps: plan.aprBps,
             snapshotTenorDays: plan.tenorDays,
             snapshotEarlyWithdrawPenaltyBps: plan.earlyWithdrawPenaltyBps,
-            autoCompound: true,
+            autoCompound: false, // ← FIX: Default to FALSE (user opt-in)
             lastCompoundTime: block.timestamp,
-            accumulatedInterest: 0
+            accumulatedInterest: 0,
+            totalPartialWithdrawn: 0
         });
 
         userDepositIds[depositor].push(newDepositId);
         nextDepositId++;
 
-        // User transfer trực tiếp vào PrincipalVault
         principalVault.depositPrincipal(depositor, depositAmount);
-
-        // Mint NFT certificate
         nft.mint(depositor, newDepositId, planId, depositAmount);
 
         emit DepositCertificateOpened(
@@ -361,17 +388,24 @@ contract SavingBankUpgradeable is
         if (block.timestamp < deposit.maturityAt) revert NotMaturedYet();
 
         uint256 totalInterest;
-        uint256 principal = deposit.principal;
+        uint256 currentPrincipal = deposit.principal -
+            deposit.totalPartialWithdrawn;
 
-        // Case 1: Auto-compound is still enabled - do final compound
+        // ================================================================
+        // STEP 1: Handle Auto-Compound (if enabled)
+        // ================================================================
+
         if (deposit.autoCompound) {
+            // Do final compound from lastCompoundTime to maturity
             uint256 timePassed = deposit.maturityAt - deposit.lastCompoundTime;
             if (timePassed > 0) {
-                uint256 finalInterest = (deposit.principal *
+                // Calculate interest on CURRENT principal (after partial withdrawals)
+                uint256 finalInterest = (currentPrincipal *
                     deposit.snapshotAprBps *
                     timePassed) / (SECONDS_PER_YEAR * BASIS_POINTS);
+
                 if (finalInterest > 0) {
-                    // ✅ THÊM: Transfer interest to PrincipalVault
+                    // Transfer interest to PrincipalVault
                     interestVault.transferInterestToPrincipal(
                         address(principalVault),
                         deposit.owner,
@@ -384,43 +418,63 @@ contract SavingBankUpgradeable is
 
                     deposit.principal += finalInterest;
                     deposit.accumulatedInterest += finalInterest;
-                    principal = deposit.principal;
+
+                    // ✅ Update current principal for withdrawal
+                    currentPrincipal += finalInterest;
                 }
             }
-            totalInterest = deposit.accumulatedInterest;
+
+            totalInterest = 0;
         }
-        // Case 2: Auto-compound was disabled
+        // ================================================================
+        // STEP 2: Handle Disabled Compound (had compound, then disabled)
+        // ================================================================
         else if (deposit.accumulatedInterest > 0) {
             // Calculate remaining interest from disable time to maturity
+            // on CURRENT principal
             uint256 timePassed = deposit.maturityAt - deposit.lastCompoundTime;
-            uint256 remainingInterest = (deposit.principal *
+            uint256 remainingInterest = (currentPrincipal *
                 deposit.snapshotAprBps *
                 timePassed) / (SECONDS_PER_YEAR * BASIS_POINTS);
 
-            // Total interest = only the remaining interest (accumulated already in principal)
-            totalInterest = remainingInterest;
+            // Total interest = accumulated (already in principal) + remaining
+            totalInterest = deposit.accumulatedInterest + remainingInterest;
         }
-        // Case 3: Never used auto-compound - calculate normal interest
+        // ================================================================
+        // STEP 3: Normal Interest (no compound at all)
+        // ================================================================
         else {
-            totalInterest = _calculateInterest(depositId);
+            // Calculate interest on CURRENT principal (after partial withdrawals)
+            totalInterest = _calculateInterestOnRemaining(depositId);
         }
+
+        // ================================================================
+        // STEP 4: Update Status
+        // ================================================================
 
         deposit.status = DepositStatus.Withdrawn;
 
-        // Calculate original principal (before any compound)
-        uint256 originalPrincipal = principal - deposit.accumulatedInterest;
+        // ================================================================
+        // STEP 5: Withdraw Funds
+        // ================================================================
 
-        // Withdraw original principal from PrincipalVault
-        principalVault.withdrawPrincipal(msg.sender, originalPrincipal);
+        // Withdraw principal (includes accumulated interest if compounded)
+        if (currentPrincipal > 0) {
+            principalVault.withdrawPrincipal(msg.sender, currentPrincipal);
+        }
 
-        // Pay all interest (accumulated + new) from InterestVault
-        interestVault.payInterest(msg.sender, totalInterest);
+        // Pay additional interest from InterestVault
+        if (totalInterest > 0) {
+            interestVault.payInterest(msg.sender, totalInterest);
+        }
+
+        // Burn NFT
         nft.burn(depositId);
 
         emit Withdrawn(
             depositId,
             msg.sender,
-            principal,
+            currentPrincipal,
             totalInterest,
             DepositStatus.Withdrawn
         );
@@ -428,6 +482,7 @@ contract SavingBankUpgradeable is
 
     /**
      * @notice Early withdraw with penalty
+     * @dev User loses ALL interest, only gets remaining principal - penalty
      */
     function earlyWithdraw(uint256 depositId) external nonReentrant {
         DepositCertificate storage deposit = depositCertificates[depositId];
@@ -436,8 +491,20 @@ contract SavingBankUpgradeable is
         if (deposit.status != DepositStatus.Active) revert NotActiveDeposit();
         if (block.timestamp >= deposit.maturityAt) revert AlreadyMatured();
 
-        uint256 penalty = (deposit.principal *
+        // ================================================================
+        // Calculate remaining principal after partial withdrawals
+        // NO interest calculation needed - user loses all interest!
+        // ================================================================
+        uint256 remainingPrincipal = deposit.principal -
+            deposit.totalPartialWithdrawn;
+
+        // ================================================================
+        // Calculate penalty on REMAINING principal only
+        // ================================================================
+        uint256 penalty = (remainingPrincipal *
             deposit.snapshotEarlyWithdrawPenaltyBps) / BASIS_POINTS;
+
+        uint256 amountToUser = remainingPrincipal - penalty;
 
         emit PenaltyApplied(
             depositId,
@@ -447,15 +514,19 @@ contract SavingBankUpgradeable is
             block.timestamp
         );
 
-        uint256 amountToUser = deposit.principal - penalty;
-
         deposit.status = DepositStatus.EarlyWithdrawn;
 
-        // Trả tiền cho user (principal - penalty)
+        // ================================================================
+        // Transfer funds
+        // ================================================================
+
+        // User receives: remaining principal - penalty (NO interest)
         principalVault.withdrawPrincipal(msg.sender, amountToUser);
 
-        // Chuyển penalty cho feeReceiver
-        principalVault.withdrawPrincipal(feeReceiver, penalty);
+        // Fee receiver gets penalty
+        if (penalty > 0) {
+            principalVault.withdrawPrincipal(feeReceiver, penalty);
+        }
 
         // Burn NFT
         nft.burn(depositId);
@@ -470,7 +541,8 @@ contract SavingBankUpgradeable is
     }
 
     /**
-     * @notice Renew deposit at maturity to a new plan (compound)
+     * @notice Renew deposit at maturity to a new plan
+     * @dev Now handles auto-compound + partial withdrawals correctly
      */
     function renew(uint256 depositId, uint256 newPlanId) external nonReentrant {
         DepositCertificate storage oldDeposit = depositCertificates[depositId];
@@ -484,8 +556,73 @@ contract SavingBankUpgradeable is
         SavingPlan memory plan = savingPlans[newPlanId];
         if (!plan.enabled) revert NotEnabledPlan();
 
-        uint256 interest = _calculateInterest(depositId);
-        uint256 newPrincipal = oldDeposit.principal + interest;
+        // ================================================================
+        // Calculate REMAINING principal (after partial withdrawals)
+        // ================================================================
+        uint256 currentPrincipal = oldDeposit.principal -
+            oldDeposit.totalPartialWithdrawn;
+        uint256 totalInterest;
+
+        // ================================================================
+        // Handle Auto-Compound (same logic as withdraw)
+        // ================================================================
+        if (oldDeposit.autoCompound) {
+            // Do final compound
+            uint256 timePassed = oldDeposit.maturityAt -
+                oldDeposit.lastCompoundTime;
+            if (timePassed > 0) {
+                uint256 finalInterest = (currentPrincipal *
+                    oldDeposit.snapshotAprBps *
+                    timePassed) / (SECONDS_PER_YEAR * BASIS_POINTS);
+
+                if (finalInterest > 0) {
+                    // Transfer interest to PrincipalVault
+                    interestVault.transferInterestToPrincipal(
+                        address(principalVault),
+                        oldDeposit.owner,
+                        finalInterest
+                    );
+                    principalVault.receiveDirectDeposit(
+                        oldDeposit.owner,
+                        finalInterest
+                    );
+
+                    // Update
+                    oldDeposit.principal += finalInterest;
+                    oldDeposit.accumulatedInterest += finalInterest;
+                    currentPrincipal += finalInterest;
+                }
+            }
+
+            // Total interest = all accumulated (already in currentPrincipal)
+            totalInterest = 0; // No need to transfer separately
+        }
+        // ================================================================
+        // Handle Disabled Compound
+        // ================================================================
+        else if (oldDeposit.accumulatedInterest > 0) {
+            // Calculate remaining interest
+            uint256 timePassed = oldDeposit.maturityAt -
+                oldDeposit.lastCompoundTime;
+            uint256 remainingInterest = (currentPrincipal *
+                oldDeposit.snapshotAprBps *
+                timePassed) / (SECONDS_PER_YEAR * BASIS_POINTS);
+
+            totalInterest = remainingInterest;
+            // accumulated already in currentPrincipal
+        }
+        // ================================================================
+        // No Compound
+        // ================================================================
+        else {
+            totalInterest = _calculateInterestOnRemaining(depositId);
+        }
+
+        // ================================================================
+        // Calculate new principal
+        // ================================================================
+        uint256 newPrincipal = currentPrincipal + totalInterest;
+
         uint256 newId = nextDepositId;
         address user = msg.sender;
         uint256 maturity = block.timestamp + (plan.tenorDays * 1 days);
@@ -496,16 +633,21 @@ contract SavingBankUpgradeable is
         userDepositIds[user].push(newId);
         nextDepositId++;
 
-        // InterestVault transfer lãi trực tiếp vào PrincipalVault
-        interestVault.transferInterestToPrincipal(
-            address(principalVault),
-            user,
-            interest
-        );
+        // ================================================================
+        // Transfer remaining interest (if any)
+        // ================================================================
+        if (totalInterest > 0) {
+            interestVault.transferInterestToPrincipal(
+                address(principalVault),
+                user,
+                totalInterest
+            );
+            principalVault.receiveDirectDeposit(user, totalInterest);
+        }
 
-        // PrincipalVault update balance sau khi nhận tiền
-        principalVault.receiveDirectDeposit(user, interest);
-
+        // ================================================================
+        // Create new deposit (FRESH state)
+        // ================================================================
         depositCertificates[newId] = DepositCertificate({
             owner: user,
             planId: newPlanId,
@@ -517,12 +659,12 @@ contract SavingBankUpgradeable is
             snapshotAprBps: plan.aprBps,
             snapshotTenorDays: plan.tenorDays,
             snapshotEarlyWithdrawPenaltyBps: plan.earlyWithdrawPenaltyBps,
-            autoCompound: true,
+            autoCompound: false, // Reset (user can enable)
             lastCompoundTime: block.timestamp,
-            accumulatedInterest: 0
+            accumulatedInterest: 0,
+            totalPartialWithdrawn: 0
         });
 
-        // Burn old NFT and mint new NFT
         nft.burn(depositId);
         nft.mint(user, newId, newPlanId, newPrincipal);
 
@@ -553,6 +695,10 @@ contract SavingBankUpgradeable is
         emit AutoCompoundEnabled(depositId, msg.sender);
     }
 
+    /**
+     * @notice Disable auto-compound (with final compound)
+     * @dev Now compounds on remaining principal after partial withdrawals
+     */
     function disableAutoCompound(uint256 depositId) external {
         DepositCertificate storage deposit = depositCertificates[depositId];
 
@@ -563,12 +709,19 @@ contract SavingBankUpgradeable is
             revert DepositAlreadyMatured();
         if (!deposit.autoCompound) revert AutoCompoundNotEnabled();
 
+        // ================================================================
         // Compound any accumulated interest before disabling
+        // Calculate on CURRENT principal (after partial withdrawals)
+        // ================================================================
+        uint256 currentPrincipal = deposit.principal -
+            deposit.totalPartialWithdrawn;
         uint256 timePassed = block.timestamp - deposit.lastCompoundTime;
+
         if (timePassed > 0) {
-            uint256 interest = (deposit.principal *
+            uint256 interest = (currentPrincipal *
                 deposit.snapshotAprBps *
                 timePassed) / (SECONDS_PER_YEAR * BASIS_POINTS);
+
             if (interest > 0) {
                 // Transfer from InterestVault to PrincipalVault
                 interestVault.transferInterestToPrincipal(
@@ -583,13 +736,17 @@ contract SavingBankUpgradeable is
             }
         }
 
-        // Enable
+        // Disable
         deposit.autoCompound = false;
         deposit.lastCompoundTime = block.timestamp;
 
         emit AutoCompoundDisabled(depositId, msg.sender);
     }
 
+    /**
+     * @notice Compound interest
+     * @dev Now calculates on remaining principal after partial withdrawals
+     */
     function compound(uint256 depositId) public nonReentrant whenNotPaused {
         DepositCertificate storage deposit = depositCertificates[depositId];
 
@@ -607,15 +764,22 @@ contract SavingBankUpgradeable is
             revert CompoundTooEarly();
         }
 
-        // 3. Calculate interest since last compound
+        // ================================================================
+        // 3. Calculate interest on CURRENT principal (after partial withdrawals)
+        // ================================================================
+        uint256 currentPrincipal = deposit.principal -
+            deposit.totalPartialWithdrawn;
         uint256 timePassed = block.timestamp - deposit.lastCompoundTime;
-        uint256 interest = (deposit.principal *
+
+        uint256 interest = (currentPrincipal *
             deposit.snapshotAprBps *
             timePassed) / (SECONDS_PER_YEAR * BASIS_POINTS);
 
         if (interest == 0) revert NoInterestToCompound();
 
+        // ================================================================
         // 4. Transfer interest from InterestVault to PrincipalVault
+        // ================================================================
         interestVault.transferInterestToPrincipal(
             address(principalVault),
             deposit.owner,
@@ -623,7 +787,11 @@ contract SavingBankUpgradeable is
         );
         principalVault.receiveDirectDeposit(deposit.owner, interest);
 
+        // ================================================================
         // 5. Update certificate
+        // ================================================================
+        // Important: Update deposit.principal (this adds interest to total)
+        // But totalPartialWithdrawn stays the same
         deposit.principal += interest;
         deposit.accumulatedInterest += interest;
         deposit.lastCompoundTime = block.timestamp;
@@ -644,6 +812,59 @@ contract SavingBankUpgradeable is
         }
 
         emit CompoundedBatch(depositIds, successCount);
+    }
+
+    function partialWithdraw(
+        uint256 depositId,
+        uint256 amount
+    ) external whenNotPaused nonReentrant {
+        DepositCertificate storage deposit = depositCertificates[depositId];
+
+        // 1. Validations
+        if (deposit.owner != msg.sender) revert NotOwner();
+        if (deposit.status != DepositStatus.Active) revert NotActiveDeposit();
+        if (block.timestamp >= deposit.maturityAt) revert AlreadyMatured();
+
+        // 2. Check available balance
+        uint256 available = deposit.principal - deposit.totalPartialWithdrawn;
+        if (amount > available) revert InsufficientBalance();
+
+        // 3. Check minimum remaining
+        SavingPlan memory plan = savingPlans[deposit.planId];
+        uint256 remaining = available - amount;
+        if (remaining < plan.minDeposit && remaining != 0) {
+            revert BelowMinimumRemaining();
+        }
+
+        // 4. Calculate time-based penalty
+        uint256 penalty = _calculatePartialWithdrawPenalty(depositId, amount);
+        uint256 amountToUser = amount - penalty;
+
+        // 5. Transfer from PrincipalVault
+        principalVault.withdrawPrincipal(msg.sender, amountToUser);
+        if (penalty > 0) {
+            principalVault.withdrawPrincipal(feeReceiver, penalty);
+        }
+
+        // 6. Update state
+        deposit.totalPartialWithdrawn += amount;
+
+        // 7. Optional: Record history
+        partialWithdrawHistory[depositId].push(
+            PartialWithdrawal({
+                amount: amount,
+                timestamp: block.timestamp,
+                penaltyAmount: penalty
+            })
+        );
+
+        emit PartialWithdrawn(
+            depositId,
+            msg.sender,
+            amount,
+            penalty,
+            amountToUser
+        );
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -874,6 +1095,44 @@ contract SavingBankUpgradeable is
         );
     }
 
+    /**
+     * @notice Get available balance for partial withdrawal
+     */
+    function getAvailableBalance(
+        uint256 depositId
+    ) external view returns (uint256 available, uint256 minRemaining) {
+        DepositCertificate memory deposit = depositCertificates[depositId];
+        SavingPlan memory plan = savingPlans[deposit.planId];
+
+        available = deposit.principal - deposit.totalPartialWithdrawn;
+        minRemaining = plan.minDeposit;
+    }
+
+    /**
+     * @notice Get maximum withdrawable amount
+     */
+    function getMaxPartialWithdraw(
+        uint256 depositId
+    ) external view returns (uint256) {
+        DepositCertificate memory deposit = depositCertificates[depositId];
+        SavingPlan memory plan = savingPlans[deposit.planId];
+
+        uint256 available = deposit.principal - deposit.totalPartialWithdrawn;
+
+        // Can withdraw all except minDeposit
+        if (available <= plan.minDeposit) return 0;
+        return available - plan.minDeposit;
+    }
+
+    /**
+     * @notice Get partial withdrawal history
+     */
+    function getPartialWithdrawalHistory(
+        uint256 depositId
+    ) external view returns (PartialWithdrawal[] memory) {
+        return partialWithdrawHistory[depositId];
+    }
+
     /*//////////////////////////////////////////////////////////////
                          HELPER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -890,6 +1149,54 @@ contract SavingBankUpgradeable is
             tenorSeconds) / (SECONDS_PER_YEAR * BASIS_POINTS);
 
         return interestAmount;
+    }
+
+    /**
+     * @notice Calculate time-based penalty for partial withdrawal
+     * @dev Penalty reduces as time passes:
+     *      Early (start) = Full penalty rate
+     *      Late (near maturity) = Lower penalty
+     *
+     * Formula: penalty = amount × (timeRemaining/totalTime) × penaltyRate
+     */
+    function _calculatePartialWithdrawPenalty(
+        uint256 depositId,
+        uint256 amount
+    ) internal view returns (uint256) {
+        DepositCertificate memory deposit = depositCertificates[depositId];
+
+        uint256 totalDuration = deposit.maturityAt - deposit.startAt;
+        uint256 timeElapsed = block.timestamp - deposit.startAt;
+        uint256 timeRemaining = totalDuration - timeElapsed;
+
+        // Penalty = amount × (timeRemaining/totalDuration) × penaltyBps / 10000
+        uint256 penalty = (amount *
+            timeRemaining *
+            deposit.snapshotEarlyWithdrawPenaltyBps) /
+            (totalDuration * BASIS_POINTS);
+
+        return penalty;
+    }
+
+    /**
+     * @notice Calculate interest on remaining principal (after partial withdrawals)
+     */
+    function _calculateInterestOnRemaining(
+        uint256 depositId
+    ) internal view returns (uint256) {
+        DepositCertificate memory deposit = depositCertificates[depositId];
+
+        // Current principal after partial withdrawals
+        uint256 currentPrincipal = deposit.principal -
+            deposit.totalPartialWithdrawn;
+
+        // Calculate based on CURRENT principal
+        uint256 tenorSeconds = deposit.snapshotTenorDays * 1 days;
+        uint256 interest = (currentPrincipal *
+            deposit.snapshotAprBps *
+            tenorSeconds) / (SECONDS_PER_YEAR * BASIS_POINTS);
+
+        return interest;
     }
 
     /*//////////////////////////////////////////////////////////////

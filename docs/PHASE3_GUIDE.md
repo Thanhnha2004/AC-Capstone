@@ -199,7 +199,7 @@ function getAvailableBalance(uint256 depositId) external view;
 
 **Subtasks:**
 
-- [ ] **3.2.1 Add tracking** (2h)
+- [✅] **3.2.1 Add tracking** (2h)
   ```solidity
   struct PartialWithdrawal {
       uint256 amount;
@@ -210,7 +210,7 @@ function getAvailableBalance(uint256 depositId) external view;
   uint256 totalPartialWithdrawn;  // Add to DepositCertificate
   ```
 
-- [ ] **3.2.2 Implement withdrawal** (6h)
+- [✅] **3.2.2 Implement withdrawal** (6h)
   ```solidity
   function partialWithdraw(uint256 depositId, uint256 amount) external {
       // Validate
@@ -230,7 +230,7 @@ function getAvailableBalance(uint256 depositId) external view;
   }
   ```
 
-- [ ] **3.2.3 Min balance check** (2h)
+- [✅] **3.2.3 Min balance check** (2h)
   ```solidity
   function getAvailableBalance(uint256 depositId) public view {
       uint256 available = principal - totalPartialWithdrawn;
@@ -239,7 +239,7 @@ function getAvailableBalance(uint256 depositId) external view;
   }
   ```
 
-- [ ] **3.2.4 Penalty calculation** (4h)
+- [✅] **3.2.4 Penalty calculation** (4h)
   ```solidity
   function calculatePenalty(uint256 depositId, uint256 amount) 
       public view returns (uint256) {
@@ -252,7 +252,7 @@ function getAvailableBalance(uint256 depositId) external view;
   }
   ```
 
-- [ ] **3.2.5 Track history** (2h)
+- [✅] **3.2.5 Track history** (2h)
   ```solidity
   function recordPartialWithdrawal(
       uint256 depositId,
@@ -267,7 +267,7 @@ function getAvailableBalance(uint256 depositId) external view;
   }
   ```
 
-- [ ] **3.2.6 Update full withdraw** (3h)
+- [✅] **3.2.6 Update full withdraw** (3h)
   ```solidity
   function withdraw(uint256 depositId) external override {
       uint256 remaining = deposit.principal; // After partial withdrawals
@@ -276,7 +276,7 @@ function getAvailableBalance(uint256 depositId) external view;
   }
   ```
 
-- [ ] **3.2.7 Events** (1h)
+- [✅] **3.2.7 Events** (1h)
   ```solidity
   event PartialWithdrawal(
       uint256 indexed depositId,
@@ -286,7 +286,7 @@ function getAvailableBalance(uint256 depositId) external view;
   );
   ```
 
-- [ ] **3.2.8 Tests** (8h)
+- [✅] **3.2.8 Tests** (8h)
   ```typescript
   ✓ Partial withdraw reduces principal
   ✓ Cannot withdraw below minimum

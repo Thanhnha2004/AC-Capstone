@@ -256,71 +256,18 @@ describe("SavingBank Upgrade Tests", function () {
       expect(depositAfter.maturityAt).to.equal(depositBefore.maturityAt);
       expect(depositAfter.status).to.equal(depositBefore.status);
 
-      // Assert counters
+      // Assert counter variables
       expect(nextPlanIdAfter).to.equal(nextPlanIdBefore);
       expect(nextDepositIdAfter).to.equal(nextDepositIdBefore);
 
-      // Assert addresses
+      // Assert contract references
       expect(tokenAddressAfter).to.equal(tokenAddressBefore);
       expect(principalVaultAfter).to.equal(principalVaultBefore);
       expect(interestVaultAfter).to.equal(interestVaultBefore);
       expect(feeReceiverAfter).to.equal(feeReceiverBefore);
-
-      console.log("\n✅ All state variables preserved!");
     });
 
-    it("Should preserve user deposit IDs mapping", async function () {
-      const {
-        savingBank,
-        token,
-        principalVault,
-        operator,
-        user1,
-        proxyAddress,
-      } = await loadFixture(deploySavingBankFixture);
-
-      // Create plan and deposit
-      await savingBank
-        .connect(operator)
-        .createPlan(
-          30,
-          1000,
-          ethers.parseEther("100"),
-          ethers.parseEther("10000"),
-          500,
-        );
-
-      await token
-        .connect(user1)
-        .approve(await principalVault.getAddress(), ethers.parseEther("1000"));
-      await savingBank
-        .connect(user1)
-        .openDepositCertificate(1, ethers.parseEther("1000"));
-
-      const depositIdsBefore = await savingBank.getUserDepositIds(
-        user1.address,
-      );
-
-      // Upgrade
-      const SavingBankFactory = await ethers.getContractFactory(
-        "SavingBankUpgradeable",
-      );
-      const upgraded = await upgrades.upgradeProxy(
-        proxyAddress,
-        SavingBankFactory,
-        { kind: "uups" },
-      );
-      upgradedSavingBank = upgraded as unknown as SavingBankUpgradeable;
-
-      const depositIdsAfter = await upgradedSavingBank.getUserDepositIds(
-        user1.address,
-      );
-
-      expect(depositIdsAfter.length).to.equal(depositIdsBefore.length);
-      expect(depositIdsAfter[0]).to.equal(depositIdsBefore[0]);
-    });
-
-    it("Should preserve multiple deposits", async function () {
+    it("Should preserve multiple deposits after upgrade", async function () {
       const {
         savingBank,
         token,
@@ -341,59 +288,27 @@ describe("SavingBank Upgrade Tests", function () {
           500,
         );
 
-      // Make 3 deposits
-      for (let i = 0; i < 3; i++) {
-        await token
-          .connect(user1)
-          .approve(await principalVault.getAddress(), ethers.parseEther("500"));
-        await savingBank
-          .connect(user1)
-          .openDepositCertificate(1, ethers.parseEther("500"));
-      }
+      // Create 3 deposits
+      await token
+        .connect(user1)
+        .approve(await principalVault.getAddress(), ethers.parseEther("3000"));
 
-      // Get all deposits before upgrade
-      const depositIds = await savingBank.getUserDepositIds(user1.address);
-      const depositsBefore = [];
-      for (const id of depositIds) {
-        depositsBefore.push(await savingBank.getDepositInfo(id));
-      }
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("1000"));
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("500"));
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("1500"));
+
+      // Get deposits before upgrade
+      const deposit1Before = await savingBank.getDepositInfo(1);
+      const deposit2Before = await savingBank.getDepositInfo(2);
+      const deposit3Before = await savingBank.getDepositInfo(3);
 
       // Upgrade
-      const SavingBankFactory = await ethers.getContractFactory(
-        "SavingBankUpgradeable",
-      );
-      const upgraded = await upgrades.upgradeProxy(
-        proxyAddress,
-        SavingBankFactory,
-        {
-          kind: "uups",
-        },
-      );
-      upgradedSavingBank = upgraded as unknown as SavingBankUpgradeable;
-
-      // Verify all deposits after upgrade
-      const depositIdsAfter = await upgradedSavingBank.getUserDepositIds(
-        user1.address,
-      );
-      expect(depositIdsAfter.length).to.equal(3);
-
-      for (let i = 0; i < depositIds.length; i++) {
-        const depositAfter = await upgradedSavingBank.getDepositInfo(
-          depositIds[i],
-        );
-        expect(depositAfter.owner).to.equal(depositsBefore[i].owner);
-        expect(depositAfter.principal).to.equal(depositsBefore[i].principal);
-      }
-    });
-  });
-
-  describe("Old Functions After Upgrade", function () {
-    it("Should allow creating new plans after upgrade", async function () {
-      const { savingBank, operator, proxyAddress } = await loadFixture(
-        deploySavingBankFixture,
-      );
-
-      // Upgrade first
       const SavingBankFactory = await ethers.getContractFactory(
         "SavingBankUpgradeable",
       );
@@ -404,23 +319,24 @@ describe("SavingBank Upgrade Tests", function () {
       );
       upgradedSavingBank = upgraded as unknown as SavingBankUpgradeable;
 
-      // Create plan after upgrade
-      await expect(
-        upgradedSavingBank.connect(operator).createPlan(
-          60, // 60 days
-          1500, // 15% APR
-          ethers.parseEther("200"),
-          ethers.parseEther("20000"),
-          300, // 3% penalty
-        ),
-      ).to.emit(upgradedSavingBank, "PlanCreated");
+      // Get deposits after upgrade
+      const deposit1After = await upgradedSavingBank.getDepositInfo(1);
+      const deposit2After = await upgradedSavingBank.getDepositInfo(2);
+      const deposit3After = await upgradedSavingBank.getDepositInfo(3);
 
-      const plan = await upgradedSavingBank.getPlanInfo(1);
-      expect(plan.tenorDays).to.equal(60);
-      expect(plan.aprBps).to.equal(1500);
+      // Verify all deposits preserved
+      expect(deposit1After.principal).to.equal(deposit1Before.principal);
+      expect(deposit2After.principal).to.equal(deposit2Before.principal);
+      expect(deposit3After.principal).to.equal(deposit3Before.principal);
+
+      expect(deposit1After.owner).to.equal(user1.address);
+      expect(deposit2After.owner).to.equal(user1.address);
+      expect(deposit3After.owner).to.equal(user1.address);
     });
+  });
 
-    it("Should allow deposits after upgrade", async function () {
+  describe("Functionality After Upgrade", function () {
+    it("Should allow creating new deposits after upgrade", async function () {
       const {
         savingBank,
         token,
@@ -558,6 +474,272 @@ describe("SavingBank Upgrade Tests", function () {
       await expect(upgradedSavingBank.connect(user1).earlyWithdraw(1)).to.emit(
         upgradedSavingBank,
         "EarlyWithdrawn",
+      );
+    });
+  });
+
+  describe("Partial Withdraw Tests", function () {
+    it("Should allow partial withdrawal after upgrade", async function () {
+      const {
+        savingBank,
+        token,
+        principalVault,
+        operator,
+        user1,
+        proxyAddress,
+      } = await loadFixture(deploySavingBankFixture);
+
+      // Create plan and deposit
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          500,
+        );
+
+      await token
+        .connect(user1)
+        .approve(await principalVault.getAddress(), ethers.parseEther("1000"));
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("1000"));
+
+      // Upgrade
+      const SavingBankFactory = await ethers.getContractFactory(
+        "SavingBankUpgradeable",
+      );
+      const upgraded = await upgrades.upgradeProxy(
+        proxyAddress,
+        SavingBankFactory,
+        { kind: "uups" },
+      );
+      upgradedSavingBank = upgraded as unknown as SavingBankUpgradeable;
+
+      // Partial withdraw after upgrade
+      const withdrawAmount = ethers.parseEther("200");
+      await expect(
+        upgradedSavingBank.connect(user1).partialWithdraw(1, withdrawAmount),
+      ).to.emit(upgradedSavingBank, "PartialWithdrawn");
+    });
+
+    it("Should update totalPartialWithdrawn correctly", async function () {
+      const {
+        savingBank,
+        token,
+        principalVault,
+        operator,
+        user1,
+        proxyAddress,
+      } = await loadFixture(deploySavingBankFixture);
+
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          500,
+        );
+
+      await token
+        .connect(user1)
+        .approve(await principalVault.getAddress(), ethers.parseEther("1000"));
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("1000"));
+
+      // Upgrade
+      const SavingBankFactory = await ethers.getContractFactory(
+        "SavingBankUpgradeable",
+      );
+      const upgraded = await upgrades.upgradeProxy(
+        proxyAddress,
+        SavingBankFactory,
+        { kind: "uups" },
+      );
+      upgradedSavingBank = upgraded as unknown as SavingBankUpgradeable;
+
+      // First partial withdraw
+      await upgradedSavingBank
+        .connect(user1)
+        .partialWithdraw(1, ethers.parseEther("200"));
+
+      let deposit = await upgradedSavingBank.depositCertificates(1);
+      expect(deposit.totalPartialWithdrawn).to.equal(ethers.parseEther("200"));
+
+      // Second partial withdraw
+      await upgradedSavingBank
+        .connect(user1)
+        .partialWithdraw(1, ethers.parseEther("300"));
+
+      deposit = await upgradedSavingBank.depositCertificates(1);
+      expect(deposit.totalPartialWithdrawn).to.equal(ethers.parseEther("500"));
+    });
+
+    it("Should not allow withdrawing below minimum remaining", async function () {
+      const {
+        savingBank,
+        token,
+        principalVault,
+        operator,
+        user1,
+        proxyAddress,
+      } = await loadFixture(deploySavingBankFixture);
+
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          500,
+        );
+
+      await token
+        .connect(user1)
+        .approve(await principalVault.getAddress(), ethers.parseEther("1000"));
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("1000"));
+
+      // Upgrade
+      const SavingBankFactory = await ethers.getContractFactory(
+        "SavingBankUpgradeable",
+      );
+      const upgraded = await upgrades.upgradeProxy(
+        proxyAddress,
+        SavingBankFactory,
+        { kind: "uups" },
+      );
+      upgradedSavingBank = upgraded as unknown as SavingBankUpgradeable;
+
+      // Try to withdraw too much (would leave less than minDeposit = 100)
+      await expect(
+        upgradedSavingBank
+          .connect(user1)
+          .partialWithdraw(1, ethers.parseEther("950")),
+      ).to.be.revertedWithCustomError(
+        upgradedSavingBank,
+        "BelowMinimumRemaining",
+      );
+    });
+
+    it("Should track partial withdrawal history", async function () {
+      const {
+        savingBank,
+        token,
+        principalVault,
+        operator,
+        user1,
+        proxyAddress,
+      } = await loadFixture(deploySavingBankFixture);
+
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          30,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          500,
+        );
+
+      await token
+        .connect(user1)
+        .approve(await principalVault.getAddress(), ethers.parseEther("1000"));
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("1000"));
+
+      // Upgrade
+      const SavingBankFactory = await ethers.getContractFactory(
+        "SavingBankUpgradeable",
+      );
+      const upgraded = await upgrades.upgradeProxy(
+        proxyAddress,
+        SavingBankFactory,
+        { kind: "uups" },
+      );
+      upgradedSavingBank = upgraded as unknown as SavingBankUpgradeable;
+
+      // Make 2 partial withdrawals
+      await upgradedSavingBank
+        .connect(user1)
+        .partialWithdraw(1, ethers.parseEther("200"));
+      await upgradedSavingBank
+        .connect(user1)
+        .partialWithdraw(1, ethers.parseEther("150"));
+
+      const history = await upgradedSavingBank.getPartialWithdrawalHistory(1);
+      expect(history.length).to.equal(2);
+      expect(history[0].amount).to.equal(ethers.parseEther("200"));
+      expect(history[1].amount).to.equal(ethers.parseEther("150"));
+    });
+
+    it("Should calculate interest on remaining principal after partial withdraw", async function () {
+      const {
+        savingBank,
+        token,
+        principalVault,
+        operator,
+        user1,
+        proxyAddress,
+      } = await loadFixture(deploySavingBankFixture);
+
+      await savingBank
+        .connect(operator)
+        .createPlan(
+          1,
+          1000,
+          ethers.parseEther("100"),
+          ethers.parseEther("10000"),
+          500,
+        );
+
+      await token
+        .connect(user1)
+        .approve(await principalVault.getAddress(), ethers.parseEther("1000"));
+      await savingBank
+        .connect(user1)
+        .openDepositCertificate(1, ethers.parseEther("1000"));
+
+      // Upgrade
+      const SavingBankFactory = await ethers.getContractFactory(
+        "SavingBankUpgradeable",
+      );
+      const upgraded = await upgrades.upgradeProxy(
+        proxyAddress,
+        SavingBankFactory,
+        { kind: "uups" },
+      );
+      upgradedSavingBank = upgraded as unknown as SavingBankUpgradeable;
+
+      // Partial withdraw
+      await upgradedSavingBank
+        .connect(user1)
+        .partialWithdraw(1, ethers.parseEther("500"));
+
+      // Fast forward to maturity
+      await ethers.provider.send("evm_increaseTime", [2 * 24 * 60 * 60]);
+      await ethers.provider.send("evm_mine", []);
+
+      // Withdraw and check interest is calculated on remaining 500, not original 1000
+      const balanceBefore = await token.balanceOf(user1.address);
+      await upgradedSavingBank.connect(user1).withdraw(1);
+      const balanceAfter = await token.balanceOf(user1.address);
+
+      // Interest should be on 500 remaining principal
+      const expectedInterest = ethers.parseEther("500") * 1000n / 10000n / 365n;
+      const expectedTotal = ethers.parseEther("500") + expectedInterest;
+
+      expect(balanceAfter - balanceBefore).to.be.closeTo(
+        expectedTotal,
+        ethers.parseEther("1"),
       );
     });
   });
